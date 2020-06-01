@@ -1,9 +1,9 @@
 # Easy_PathArmor
 
 ## How to Compile
-
-  PathArmor$ make
-
+```bash
+PathArmor$ make
+```
 ## 進捗
 
 * Done
