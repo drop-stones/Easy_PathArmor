@@ -1,5 +1,11 @@
 # Easy_PathArmor
 
+## 説明
+
+* cfg_generation: Tritonを用いて、CFGを作成
+* kernel_module: Pinを用いて、Control Flowを監視
+* Test: テスト用ディレクトリ
+
 ## How to Compile
 ```bash
 PathArmor$ make
@@ -8,9 +14,8 @@ PathArmor$ make
 
 * Done
   * CFG作成 with Triton
-  * CFGのSerialization with Boostライブラリ
+  * CFGのSerialization
 
 * To do
-  * **Help!** Pinのビルド (Boostライブラリをincludeするとコンパイル出来ない)
   * kernel module with Pin
   * Path Verification
