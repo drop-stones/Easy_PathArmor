@@ -1,5 +1,12 @@
 #!/bin/bash
 
-$(PATHARMOR_HOME)="/home/bin/code/PathArmor"
+PIN_ROOT=/home/binary/pin/pin-3.6-97554-g31f0a167d-gcc-linux
+PATH_ARMOR=/home/binary/code/PathArmor
+KERNEL_MODULE_OBJ=$PATH_ARMOR/kernel_module/obj
+CFG_PATH=$PATH_ARMOR/cfg_generation
+TEST_PATH=$PATH_ARMOR/Test
+TEST01_PATH=$TEST_PATH/test01
 
-
+$CFG_PATH/a.out $TEST01_PATH/test01 $TEST01_PATH/configure.map 0x400746 0x40075e $TEST01_PATH/cfg.txt
+$PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- \
+  $TEST01_PATH/test01 0 0x400746 0x40075e $TEST01_PATH/cfg.txt
