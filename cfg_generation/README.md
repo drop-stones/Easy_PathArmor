@@ -19,3 +19,4 @@
       * 方法2: まだSerializeしていないnodeは展開、既出のnodeは参照のみ
          * save: saveしたnodeを記録しておき、既出かどうか確認
          * load: nodeのidが既出かどうか確認
+* Path Verificationの実装
