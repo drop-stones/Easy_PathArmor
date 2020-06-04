@@ -17,5 +17,10 @@ PathArmor$ make
   * CFGのSerialization
 
 * To do
+  * CFGのSerialization修正
+    * 複数参照に対応
+  * CFG作成の修正
+    * 複数のreturn先を持つことに対応してなかった!!
+    * ベーシックブロックの分割に対応
   * kernel module with Pin
   * Path Verification
