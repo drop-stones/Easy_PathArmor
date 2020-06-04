@@ -3,9 +3,8 @@
 ## To do
 
 * 複数先へのreturnに対応
-  * returnをvectorに変更
-  * return先も一緒に保存する必要があるかも
-  * vectorで順序を保持?
+  * <returnアドレス, return_edge>のペアで保持
+  * 直近のcallは最後の要素
 * 後々に分解できるような構造に変更
   * <callアドレス, call_edge>のペアで保持
   * 同じBBから複数回呼ばれることへの対応
