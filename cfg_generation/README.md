@@ -25,7 +25,8 @@
   
 ## To do
 
-* call_edges/return_edgesをmapで保持
-  * 順序を保持する機構が必要(直近のcallerがわからないといけない)
+* call_edges/return_edgesのデータ構造を変更
+  * ユニークなもの (重複要素を持たない)
+  * 順序を持つ (直近のcall, returnがわかる)
 * call edge/return edgeの同じ要素追加への対処 (for, whileなど)
 * Path Verificationの実装
