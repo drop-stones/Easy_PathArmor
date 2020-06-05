@@ -25,4 +25,5 @@
   
 ## To do
 
+* call edge/return edgeの同じ要素追加への対処 (for, whileなど)
 * Path Verificationの実装
