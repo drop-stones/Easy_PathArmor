@@ -1,4 +1,5 @@
 #include <map>
+#include <set>
 #include "cfg.hpp"
 
 #define  BUF_SIZE 10
@@ -8,13 +9,16 @@ static struct cfg_node *current_node;
 static unsigned int cfg_node_id = 0;
 static std::map <struct cfg_node *, unsigned int> save_map;
 static std::map <unsigned int, struct cfg_node *> load_map;
+static std::set <struct cfg_node *> searched_set;
 
 static void cfg_save_node (std::ofstream &ofs, struct cfg_node *node);
 static struct cfg_node *cfg_load_node (std::ifstream &ifs);
 static void cfg_free_call (struct cfg_node *caller);
 static void cfg_free_node (struct cfg_node *subroot_node);
-static struct cfg_node *cfg_find_node (unsigned int id, struct cfg_node *subroot_node);
-static struct cfg_node *cfg_find_node (uint64_t entry, struct cfg_node *caller);
+static struct cfg_node *cfg_find_node (unsigned int id, struct cfg_node *node);
+static struct cfg_node *cfg_find_node (uint64_t addr, struct cfg_node *node);
+static struct cfg_node *cfg_find (unsigned int id);
+static struct cfg_node *cfg_find (uint64_t addr);
 
 /*******************************************************************
  *                       public function                           *
@@ -41,6 +45,46 @@ cfg_set_exit (uint64_t exit)
   current_node->exit = exit;
 }
 
+struct cfg_node *
+cfg_divide_node (struct cfg_node *node, uint64_t entry)
+{
+  if (node == NULL) return NULL;
+  if (!(node->entry < entry && entry < node->exit))
+    return node;
+
+  unsigned int i;
+  struct cfg_node *upper, *lower;
+  upper = node;
+  lower = new struct cfg_node (cfg_node_id++, entry);
+
+  /* lower setting */
+  lower->exit       = upper->exit;
+  lower->true_edge  = upper->true_edge;
+  lower->false_edge = upper->false_edge;
+  for (i = 0; i < upper->call_edges.size (); i++) {
+    /* swap upper -> lower */
+    uint64_t call_addr = upper->call_edges [i].first;
+    if (lower->entry <= call_addr && call_addr <= lower->exit) {
+      lower->call_edges.push_back (upper->call_edges [i]);
+    }
+  }
+  /* very dirty */
+  for (i = 0; i < lower->call_edges.size (); i++) {
+    upper->call_edges.pop_back ();
+  }
+  for (i = 0; i < lower->return_edges.size (); i++) {
+    /* swap All upper -> lower */
+    lower->return_edges.push_back (upper->return_edges [i]);
+  }
+  upper->return_edges.clear ();
+  /*** Fault: Cannot get correct exit address ***/
+  upper->exit       = entry;
+  upper->true_edge  = NULL;
+  upper->false_edge = lower;
+
+  return lower;
+}
+
 /* Create root node */
 struct cfg_node *
 cfg_create_root (uint64_t entry)
@@ -60,9 +104,11 @@ cfg_create_branch_node (uint64_t entry, struct cfg_node *parent_node, bool condi
 {
   if (parent_node == NULL) return NULL;
 
-  struct cfg_node *new_node = cfg_find_node (entry, root);
+  struct cfg_node *new_node = cfg_find (entry);
   if (new_node == NULL) /* target node is new! */
     new_node = new struct cfg_node (cfg_node_id++, entry);
+  else if (new_node->entry < entry && entry < new_node->exit) /* divide the node */
+    new_node = cfg_divide_node (new_node, entry);
 
 #ifdef DEBUG
   printf ("  create Branch-BB%02u: entry = 0x%jx, condition = %d\n", cfg_node_id-1, entry, condition);
@@ -83,7 +129,7 @@ cfg_create_call_node (uint64_t call_addr, uint64_t return_addr, uint64_t entry, 
 {
   if (caller == NULL) return NULL;
 
-  struct cfg_node *callee = cfg_find_node (entry, root);
+  struct cfg_node *callee = cfg_find (entry);
   if (callee == NULL) /* target node is new! */
     callee = new struct cfg_node (cfg_node_id++, entry);
 
@@ -116,6 +162,7 @@ cfg_ret (uint64_t exit)
 void
 cfg_free (void)
 {
+  searched_set.clear ();
   cfg_free_node (root);
 }
 
@@ -127,7 +174,7 @@ cfg_check_validity (std::vector <struct cfg_node *> path)
     return true;
 
   struct cfg_node *cfg_ite, *path_ite;
-  cfg_ite  = cfg_find_node (path [0]->entry, root);
+  cfg_ite  = cfg_find (path [0]->entry);
   printf ("  check validity: 0 is checking...\n");
   if (cfg_ite == NULL || cfg_ite->id != path [0]->id)
     return false;
@@ -184,6 +231,9 @@ cfg_find_call_edges (unsigned int id, struct cfg_node *caller)
   if (caller == NULL) return NULL;
   for (unsigned int i = 0; i < caller->call_edges.size (); i++) {
     callee = caller->call_edges [i].second;
+    if (searched_set.find (callee) != searched_set.end ())
+      continue;
+    searched_set.insert (callee);
     if (callee->id == id)
       return callee;
     if ((true_edge  = cfg_find_node (id, callee->true_edge))  != NULL)
@@ -198,19 +248,22 @@ cfg_find_call_edges (unsigned int id, struct cfg_node *caller)
 
 /* find the call node which has same entry */
 static struct cfg_node *
-cfg_find_call_edges (uint64_t entry, struct cfg_node *caller)
+cfg_find_call_edges (uint64_t addr, struct cfg_node *caller)
 {
   struct cfg_node *callee, *true_edge, *false_edge;
   if (caller == NULL) return NULL;
   for (unsigned int i = 0; i < caller->call_edges.size (); i++) {
     callee = caller->call_edges [i].second;
-    if (callee->entry == entry)
+    if (searched_set.find (callee) != searched_set.end ())
+      continue;
+    searched_set.insert (callee);
+    if (callee->entry <= addr && addr <= callee->exit)
       return callee;
-    if ((true_edge  = cfg_find_node (entry, callee->true_edge))  != NULL)
+    if ((true_edge  = cfg_find_node (addr, callee->true_edge))  != NULL)
       return true_edge;
-    if ((false_edge = cfg_find_node (entry, callee->false_edge)) != NULL)
+    if ((false_edge = cfg_find_node (addr, callee->false_edge)) != NULL)
       return false_edge;
-    if ((callee = cfg_find_call_edges (entry, callee)) != NULL)
+    if ((callee = cfg_find_call_edges (addr, callee)) != NULL)
       return callee;
   }
   return NULL;
@@ -223,6 +276,9 @@ cfg_find_node (unsigned int id, struct cfg_node *node)
   struct cfg_node *callee, *true_edge, *false_edge;
   if (node == NULL)
     return NULL;
+  if (searched_set.find (node) != searched_set.end ())
+    return NULL;
+  searched_set.insert (node);
   if (node->id == id)
     return node;
   if ((callee = cfg_find_call_edges (id, node)) != NULL)
@@ -236,20 +292,37 @@ cfg_find_node (unsigned int id, struct cfg_node *node)
 
 /* find the branch node which has same entry */
 static struct cfg_node *
-cfg_find_node (uint64_t entry, struct cfg_node *node)
+cfg_find_node (uint64_t addr, struct cfg_node *node)
 {
   struct cfg_node *callee, *true_edge, *false_edge;
   if (node == NULL)
     return NULL;
-  if (node->entry == entry)
+  if (searched_set.find (node) != searched_set.end ())
+    return NULL;
+  searched_set.insert (node);
+  if (node->entry <= addr && addr <= node->exit)
     return node;
-  if ((callee = cfg_find_call_edges (entry, node)) != NULL)
+  if ((callee = cfg_find_call_edges (addr, node)) != NULL)
     return callee;
-  if ((true_edge  = cfg_find_node (entry, node->true_edge))  != NULL)
+  if ((true_edge  = cfg_find_node (addr, node->true_edge))  != NULL)
     return true_edge;
-  if ((false_edge = cfg_find_node (entry, node->false_edge)) != NULL)
+  if ((false_edge = cfg_find_node (addr, node->false_edge)) != NULL)
     return false_edge;
   return NULL;
+}
+
+static struct cfg_node *
+cfg_find (unsigned int id)
+{
+  searched_set.clear ();
+  return cfg_find_node (id, root);
+}
+
+static struct cfg_node *
+cfg_find (uint64_t addr)
+{
+  searched_set.clear ();
+  return cfg_find_node (addr, root);
 }
 
 /*******************************************************************
@@ -273,10 +346,16 @@ cfg_free_node (struct cfg_node *node)
 {
   if (node == NULL)
     return;
+  if (searched_set.find (node) != searched_set.end ())
+    return;
+  searched_set.insert (node);
 
   cfg_free_node (node->true_edge);
   cfg_free_node (node->false_edge);
-  cfg_free_call (node);
+  //cfg_free_call (node);
+  node->call_edges.clear ();
+  node->return_edges.clear ();
+  free (node);
 }
 
 /*******************************************************************
@@ -429,7 +508,7 @@ cfg_print_node (void)
   unsigned int i, j;
   struct cfg_node *cfg_node_i;
   for (i = 0; i < cfg_node_id; i++) {
-    cfg_node_i = cfg_find_node (i, root);
+    cfg_node_i = cfg_find (i);
     if (cfg_node_i == NULL)
       continue;
     printf ("BB%02u: 0x%jx - 0x%jx, ", cfg_node_i->id, cfg_node_i->entry, cfg_node_i->exit);
@@ -452,21 +531,23 @@ cfg_print_node (void)
 }
 
 static void
-cfg_print_subtree (struct cfg_node *subroot_node, unsigned int depth, bool cond)
+cfg_print_tree (struct cfg_node *subroot, unsigned int depth, bool cond)
 {
-  if (subroot_node == NULL)
+  if (subroot == NULL)
     return;
+  if (searched_set.find (subroot) != searched_set.end ())
+    return;
+  searched_set.insert (subroot);
 
   if (cond) {
     printf ("\n");
-    for (unsigned int i = 0; i < depth; i++) {
+    for (unsigned int i = 0; i < depth; i++)
       printf ("        ");
-    }
   }
 
-  printf ("BB%02u -> ", subroot_node->id);
-  cfg_print_subtree (subroot_node->false_edge, depth+1, false);
-  cfg_print_subtree (subroot_node->true_edge, depth+1, true);
+  printf ("BB%02u -> ", subroot->id);
+  cfg_print_tree (subroot->false_edge, depth+1, false);
+  cfg_print_tree (subroot->true_edge,  depth+1, true);
 }
 
 static void
@@ -487,6 +568,7 @@ cfg_print_call_edges (struct cfg_node *caller, unsigned int depth)
       printf (" -> BB%02u", caller->call_edges [i].second->id);
       cfg_print_call_edges (caller->call_edges [i].second, depth+1);
     } else {
+      printf ("    ");
       for (unsigned int j = 0; j < depth; j++)
         printf ("        ");
       printf (" -> BB%02u", caller->call_edges [i].second->id);
@@ -496,14 +578,17 @@ cfg_print_call_edges (struct cfg_node *caller, unsigned int depth)
 }
 
 static void
-cfg_print_subtree_call_edges (struct cfg_node *subroot_node)
+cfg_print_call_tree (struct cfg_node *subroot)
 {
-  if (subroot_node == NULL)
+  if (subroot == NULL)
     return;
+  if (searched_set.find (subroot) != searched_set.end ())
+    return;
+  searched_set.insert (subroot);
 
-  cfg_print_call_edges (subroot_node, 0);
-  cfg_print_subtree_call_edges (subroot_node->false_edge);
-  cfg_print_subtree_call_edges (subroot_node->true_edge);
+  cfg_print_call_edges (subroot, 0);
+  cfg_print_call_tree (subroot->false_edge);
+  cfg_print_call_tree (subroot->true_edge);
 }
 
 void
@@ -512,8 +597,10 @@ cfg_print (void)
   printf ("*** Basic Block Information ***\n");
   cfg_print_node ();
   printf ("*** CFG Graph ***\n");
-  cfg_print_subtree (root, 0, false);
+  searched_set.clear ();
+  cfg_print_tree (root, 0, false);
   printf ("\n");
   printf ("*** Call Graph ***\n");
-  cfg_print_subtree_call_edges (root);
+  searched_set.clear ();
+  cfg_print_call_tree (root);
 }

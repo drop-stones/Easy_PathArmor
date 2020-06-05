@@ -63,7 +63,7 @@ int
 cfg_generation_fini (void)
 {
   unload_binary (&bin);
-  cfg_free ();
+  //cfg_free ();
   return 0;
 }
 
