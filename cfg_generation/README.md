@@ -25,5 +25,6 @@
   
 ## To do
 
+* call_edges/return_edgesをmapで保持
 * call edge/return edgeの同じ要素追加への対処 (for, whileなど)
 * Path Verificationの実装
