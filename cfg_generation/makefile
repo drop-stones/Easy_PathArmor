@@ -31,5 +31,6 @@ obj:
 	mkdir -p obj
 
 clean:
-	rm -f cfg_generation *.o
+	rm -f a.out
+	rm -f -R obj
 

@@ -17,4 +17,7 @@ kernel_module : kernel_module/makefile kernel_module/src/kernel_module.cpp
 Test : Test/makefile Test/branch/branch.c Test/cfg_test/cfg_load.cpp Test/test01/test01.c
 	export TRITON_HOME=$(TRITON_HOME) && cd Test && $(MAKE)
 
-clean : 
+clean :
+	cd cfg_generation && $(MAKE) clean
+	export PIN_ROOT=$(PIN_ROOT) && cd kernel_module  && $(MAKE) clean
+	cd Test           && $(MAKE) clean

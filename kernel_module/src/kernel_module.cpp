@@ -10,11 +10,11 @@
 #include "pin.H"
 #include "/home/binary/code/PathArmor/cfg_generation/src/cfg.hpp"
 
-uint64_t start_addr;
-uint64_t end_addr;
-bool     record_flag;
-std::vector<uint64_t> call_stack;
-std::vector<struct cfg_node *> path;
+static uint64_t start_addr;
+static uint64_t end_addr;
+static bool     record_flag = false;
+static std::vector<uint64_t> call_stack;
+static std::vector<struct cfg_node *> path;
 
 /*****************************************************************************
  *                             Analysis functions                            *
@@ -50,7 +50,7 @@ branch_record (ADDRINT bb_exit, ADDRINT next_bb_entry)
   }
 
   path.push_back (next_BB);
-*/
+ */
 }
 
 /* 
@@ -110,9 +110,6 @@ instrument_call (INS ins, void *v)
   if (!record_flag) return;
   if (!INS_IsCall (ins)) return;
 
-  //IMG img = IMG_FindByAddress (INS_Address (ins));
-  //if (!IMG_Valid (img) || !IMG_IsMainExecutable (img)) return;
-
   INS_InsertPredicatedCall(
     ins, IPOINT_TAKEN_BRANCH, (AFUNPTR)call_record,
     IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR,
@@ -150,6 +147,47 @@ instrument_syscall (INS ins, void *v)
   if (!INS_IsSyscall (ins)) return;
 }
 
+static void
+instrument_rtn (RTN rtn)
+{
+  INS ins;
+  /* ins != INS_Next (RTN_InsTail (rtn)) ?? */
+  for (ins = RTN_InsHead (rtn); ins != RTN_InsTail (rtn); ins = INS_Next (ins)) {
+    
+  }
+}
+
+static void
+instrument_text_section (SEC sec)
+{
+  if (strncmp (SEC_Name (sec).c_str (), ".text", 5))
+    return;
+
+  RTN rtn;
+  /* rtn != SEC_RtnTail (sec) ?? RTN_Next (SEC_RtnTail (sec)) ?? */
+  for (rtn = SEC_RtnHead (sec); rtn != RTN_Next (SEC_RtnTail (sec)); rtn = RTN_Next (rtn)) {
+    instrument_rtn (rtn);
+  }
+}
+
+static void
+instrument_section (IMG img, void *v)
+{
+  if (!IMG_Valid (img))
+    return;
+  if (!IMG_IsMainExecutable (img))
+    return;
+
+  SEC sec;
+  for (sec = IMG_SecHead (img); SEC_Valid (sec); sec = SEC_Next (sec)) {
+    fprintf (stderr, "%s\n", SEC_Name (sec).c_str ());
+    if (!strncmp (SEC_Name (sec).c_str (), ".text", 5)) {
+      /* sec = .text */
+      instrument_text_section (sec);
+    }
+  }
+}
+
 /*****************************************************************************
  *                               Other functions                             *
  *****************************************************************************/
@@ -165,17 +203,12 @@ fini(INT32 code, void *v)
   print_path ();
 }
 
-
 int
 main(int argc, char *argv[])
 {
-  //for (int i = 0; i < argc; i++) {
-  //  fprintf (stderr, "argv [%d]: %s\n", i, argv [i]);
-  //}
-
   if (argc < 10) {
     fprintf(stderr, "usage: /home/binary/pin/pin-3.6-97554-g31f0a167d-gcc-linux/pin -t /home/binary/code/PathArmor/obj/kernel_module.so -- \n"
-                   "         <test_file> <test_arg> <start_addr> <end_addr> <cfg_file>\n");
+                    "         <test_file> <test_arg1> ... <start_addr> <end_addr> <cfg_file>\n");
     exit (1);
   }
 
@@ -185,20 +218,16 @@ main(int argc, char *argv[])
     return 1;
   }
 
-  start_addr = (uint64_t) strtoul (argv [8], NULL, 0);
-  end_addr   = (uint64_t) strtoul (argv [9], NULL, 0);
+  start_addr = (uint64_t) strtoul (argv [argc-3], NULL, 0);
+  end_addr   = (uint64_t) strtoul (argv [argc-2], NULL, 0);
 
-  cfg_load (argv [10]);
+  cfg_load (argv [argc-1]);
   cfg_print ();
 
-  INS_AddInstrumentFunction(instrument_branch, NULL);
-  INS_AddInstrumentFunction(instrument_call, NULL);
-  INS_AddInstrumentFunction(instrument_return, NULL);
-  INS_AddInstrumentFunction(instrument_syscall, NULL);
+  IMG_AddInstrumentFunction (instrument_section, NULL);
   PIN_AddFiniFunction(fini, NULL);
 
   PIN_StartProgram();
-  
+ 
   return 1;
 }
-

@@ -12,7 +12,7 @@ main (int argc, char *argv [])
 
   cfg_load (argv [1]);
   cfg_print ();
-  cfg_free_all ();
+  cfg_free ();
 
   return 0;
 }

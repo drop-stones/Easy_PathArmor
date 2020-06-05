@@ -1,3 +1,4 @@
+#include <map>
 #include "cfg.hpp"
 
 #define  BUF_SIZE 10
@@ -5,154 +6,19 @@
 static struct cfg_node *root;
 static struct cfg_node *current_node;
 static unsigned int cfg_node_id = 0;
+static std::map <struct cfg_node *, unsigned int> save_map;
+static std::map <unsigned int, struct cfg_node *> load_map;
 
 static void cfg_save_node (std::ofstream &ofs, struct cfg_node *node);
-static void cfg_load_node (std::ifstream &ifs, struct cfg_node **node_ptr);
+static struct cfg_node *cfg_load_node (std::ifstream &ifs);
+static void cfg_free_call (struct cfg_node *caller);
+static void cfg_free_node (struct cfg_node *subroot_node);
+static struct cfg_node *cfg_find_node (unsigned int id, struct cfg_node *subroot_node);
+static struct cfg_node *cfg_find_node (uint64_t entry, struct cfg_node *caller);
 
 /*******************************************************************
  *                       public function                           *
  *******************************************************************/
-
-static void
-cfg_save_node (std::ofstream &ofs, struct cfg_node *node)
-{
-  if (node == NULL) return;
-
-  int call_count, i;
-
-  ofs << node->id << " ";
-  ofs << node->entry << " ";
-  ofs << node->exit << " ";
-  if (node->true_edge != NULL) {
-    ofs << "0 ";
-    cfg_save_node (ofs, node->true_edge);
-  } else
-    ofs << -1 << " ";
-  if (node->false_edge != NULL) {
-    ofs << "0 ";
-    cfg_save_node (ofs, node->false_edge);
-  } else
-    ofs << -1 << " ";
-
-  call_count = node->call_edges.size ();
-  ofs << call_count << " ";
-  for (i = 0; i < call_count; i++) {
-    cfg_save_node (ofs, node->call_edges [i]);
-  }
-
-  if (node->return_edge != NULL) {
-    ofs << node->return_edge->id << " ";
-  } else
-    ofs << -1 << " ";
-}
-
-int
-cfg_save (const char *cfg_file)
-{
-  std::ofstream ofs (cfg_file);
-  cfg_save_node (ofs, root);
-  ofs.close ();
-
-  return 0;
-}
-
-static unsigned int
-parse_id (std::ifstream &ifs)
-{
-  char buffer [BUF_SIZE];
-  ifs.getline (buffer, BUF_SIZE, ' ');
-  return (unsigned int) atoi (buffer);
-}
-
-static uint64_t
-parse_addr (std::ifstream &ifs)
-{
-  char buffer [BUF_SIZE];
-  ifs.getline (buffer, BUF_SIZE, ' ');
-  return (uint64_t) strtoul (buffer, NULL, 0);
-}
-
-static int
-parse_flag (std::ifstream &ifs)
-{
-  char buffer [BUF_SIZE];
-  ifs.getline (buffer, BUF_SIZE, ' ');
-  return atoi (buffer);
-}
-
-static int
-parse_call_count (std::ifstream &ifs)
-{
-  return parse_flag (ifs);
-}
-
-static void
-cfg_load_node (std::ifstream &ifs, struct cfg_node **node_ptr)
-{
-  int flag, call_count, i;
-  unsigned int id;
-  uint64_t entry, exit;
-  struct cfg_node *node;
-
-  id = parse_id (ifs);
-  if (cfg_node_id < id+1)
-    cfg_node_id = id+1;
-  entry = parse_addr (ifs);
-  exit  = parse_addr (ifs);
-
-  if (*node_ptr == NULL) {
-    node = new struct cfg_node (id, entry, exit);
-    *node_ptr = node;
-  } else {
-    /* callee */
-    node = *node_ptr;
-    node->load_setting (id, entry, exit);
-  }
-
-#ifdef DEBUG
-  printf ("  create BB%u\n", id);
-#endif
-
-  /* '\n' or ' ' ?? */
-  flag = parse_flag (ifs);
-  if (flag < 0)
-    node->true_edge = NULL;
-  else
-    cfg_load_node (ifs, &node->true_edge);
-
-  flag= parse_flag (ifs);
-  if (flag < 0)
-    node->false_edge = NULL;
-  else
-    cfg_load_node (ifs, &node->false_edge);
-
-  call_count = parse_call_count (ifs);
-  for (i = 0; i < call_count; i++) {
-    struct cfg_node *callee = new struct cfg_node;
-    node->call_edges.push_back (callee);
-    cfg_load_node (ifs, &callee);
-  }
-
-  flag = parse_flag (ifs);
-  if (flag < 0)
-    node->return_edge = NULL;
-  else {
-    node->return_edge = cfg_find_node (flag, root);
-    if (node->return_edge == NULL)
-      printf ("  ** error ** return_edge@%d == NULL\n", flag);
-  }
-}
-
-int
-cfg_load (const char *cfg_file)
-{
-  std::ifstream ifs (cfg_file);
-  cfg_load_node (ifs, &root);
-  ifs.close ();
-
-  return 0;
-}
-
 
 /* return root */
 struct cfg_node *
@@ -170,33 +36,9 @@ cfg_get_current_node (void)
 
 /* setting exit */
 void
-cfg_set_exit_in_current_node (uint64_t exit)
+cfg_set_exit (uint64_t exit)
 {
   current_node->exit = exit;
-}
-
-static bool
-is_in_cfg (uint64_t entry)
-{
-  struct cfg_node *searched_node = cfg_find_node_from_entry (entry, root);
-  if (searched_node != NULL)
-    return true;
-  else
-    return false;
-}
-
-static struct cfg_node *
-cfg_add_edge (uint64_t entry, struct cfg_node *parent_node, bool condition)
-{
-  if (parent_node == NULL) return NULL;
-
-  struct cfg_node *new_edge_node = cfg_find_node_from_entry (entry, root);
-  if (condition)
-    parent_node->true_edge = new_edge_node;
-  else
-    parent_node->false_edge = new_edge_node;
-  current_node = new_edge_node;
-  return new_edge_node;
 }
 
 /* Create root node */
@@ -212,21 +54,18 @@ cfg_create_root (uint64_t entry)
   return current_node;
 }
 
-/* Create new CFG node
- *   
- */
+/* Create new branch node */
 struct cfg_node *
 cfg_create_branch_node (uint64_t entry, struct cfg_node *parent_node, bool condition)
 {
   if (parent_node == NULL) return NULL;
 
-  if (is_in_cfg (entry))
-    return cfg_add_edge (entry, parent_node, condition);
-
-  struct cfg_node *new_node = new struct cfg_node (cfg_node_id++, entry);
+  struct cfg_node *new_node = cfg_find_node (entry, root);
+  if (new_node == NULL) /* target node is new! */
+    new_node = new struct cfg_node (cfg_node_id++, entry);
 
 #ifdef DEBUG
-  printf ("  create Branch-BB%02u: entry = 0x%jx, condition = %d\n", cfg_node_id, entry, condition);
+  printf ("  create Branch-BB%02u: entry = 0x%jx, condition = %d\n", cfg_node_id-1, entry, condition);
 #endif
 
   if (condition)
@@ -238,120 +77,49 @@ cfg_create_branch_node (uint64_t entry, struct cfg_node *parent_node, bool condi
   return new_node;
 }
 
+/* Create new call node */
 struct cfg_node *
-cfg_create_call_node (uint64_t entry, struct cfg_node *caller)
+cfg_create_call_node (uint64_t call_addr, uint64_t return_addr, uint64_t entry, struct cfg_node *caller)
 {
-  if (caller == NULL) {
-    fprintf (stderr, "*** Error: can't call ***\n");
-    return NULL;
-  }
+  if (caller == NULL) return NULL;
 
-  struct cfg_node *callee = new struct cfg_node (cfg_node_id++, entry);
+  struct cfg_node *callee = cfg_find_node (entry, root);
+  if (callee == NULL) /* target node is new! */
+    callee = new struct cfg_node (cfg_node_id++, entry);
 
 #ifdef DEBUG
-  printf ("  create Call-BB%02u: entry = 0x%jx, return = BB%02u\n", cfg_node_id, entry, caller->id);
+  printf ("  create Call-BB%02u: entry = 0x%jx, return = BB%02u\n", cfg_node_id-1, entry, caller->id);
 #endif
 
-  caller->call_edges.push_back (callee);
-  callee->return_edge = caller;
+  caller->call_edges.push_back (std::make_pair (call_addr, callee));
+  callee->return_edges.push_back (std::make_pair (return_addr, caller));
   current_node = callee;
   return callee;
 }
 
+/* return to latest caller */
 struct cfg_node *
 cfg_ret (uint64_t exit)
 {
-  if (current_node->return_edge == NULL) {
-    fprintf (stderr, "*** Error: can't return ***\n");
-    return NULL;
-  }
+  if (current_node->return_edges.size () == 0) return NULL;
 
 #ifdef DEBUG
-  printf ("  Return to BB%02u\n", current_node->return_edge->id);
+  printf ("  Return to BB%02u\n", current_node->return_edges.back ().second->id);
 #endif
 
   current_node->exit = exit;
-  current_node = current_node->return_edge;
+  current_node = current_node->return_edges.back ().second;  /* Latest caller is back () */
   return current_node;
 }
 
-static void
-cfg_free_call (struct cfg_node *caller)
-{
-  if (caller == NULL)
-    return;
-
-  for (unsigned int i = 0; i < caller->call_edges.size (); i++) {
-    cfg_free_call (caller->call_edges [i]);
-  }
-  free (caller);
-}
-
-static void
-cfg_free (struct cfg_node *subroot_node)
-{
-  if (subroot_node == NULL)
-    return;
-
-  cfg_free (subroot_node->true_edge);
-  cfg_free (subroot_node->false_edge);
-  cfg_free_call (subroot_node);
-  //free (subroot_node);
-}
-
+/* free All CFG */
 void
-cfg_free_all (void)
+cfg_free (void)
 {
-  cfg_free (root);
+  cfg_free_node (root);
 }
 
-struct cfg_node *
-cfg_find_call_edges (unsigned int id, struct cfg_node *caller)
-{
-  struct cfg_node *callee;
-  for (unsigned int i = 0; i < caller->call_edges.size (); i++) {
-    callee = caller->call_edges [i];
-    if (callee->id == id)
-      return callee;
-    if ((callee = cfg_find_call_edges (id, callee)) != NULL)
-      return callee;
-  }
-  return NULL;
-}
-
-struct cfg_node *
-cfg_find_node (unsigned int id, struct cfg_node *subroot_node)
-{
-  if (subroot_node == NULL)  return NULL;
-  if (subroot_node->id == id)
-    return subroot_node;
-  struct cfg_node *callee = cfg_find_call_edges (id, subroot_node);
-  if (callee != NULL)
-    return callee;
-  struct cfg_node *true_subtree  = cfg_find_node (id, subroot_node->true_edge);
-  struct cfg_node *false_subtree = cfg_find_node (id, subroot_node->false_edge);
-  if (true_subtree != NULL)
-    return true_subtree;
-  if (false_subtree != NULL)
-    return false_subtree;
-  return NULL;
-}
-
-struct cfg_node *
-cfg_find_node_from_entry (uint64_t entry, struct cfg_node *subroot_node)
-{
-  if (subroot_node == NULL)  return NULL;
-  if (subroot_node->entry == entry)
-    return subroot_node;
-  struct cfg_node *true_subtree  = cfg_find_node_from_entry (entry, subroot_node->true_edge);
-  struct cfg_node *false_subtree = cfg_find_node_from_entry (entry, subroot_node->false_edge);
-  if (true_subtree != NULL)
-    return true_subtree;
-  if (false_subtree != NULL)
-    return false_subtree;
-  return NULL;
-}
-
+/* check whether the path is valid or not */
 bool
 cfg_check_validity (std::vector <struct cfg_node *> path)
 {
@@ -359,7 +127,7 @@ cfg_check_validity (std::vector <struct cfg_node *> path)
     return true;
 
   struct cfg_node *cfg_ite, *path_ite;
-  cfg_ite  = cfg_find_node_from_entry (path [0]->entry, root);
+  cfg_ite  = cfg_find_node (path [0]->entry, root);
   printf ("  check validity: 0 is checking...\n");
   if (cfg_ite == NULL || cfg_ite->id != path [0]->id)
     return false;
@@ -378,6 +146,279 @@ cfg_check_validity (std::vector <struct cfg_node *> path)
   return true;
 }
 
+/* save CFG in cfg_file */
+void
+cfg_save (const char *cfg_file)
+{
+  std::ofstream ofs (cfg_file);
+  if (!ofs) {
+    fprintf (stderr, "Error: Cannot open %s\n", cfg_file);
+    exit (1);
+  }
+  cfg_save_node (ofs, root);
+  ofs.close ();
+}
+
+/* load CFG from cfg_file */
+void
+cfg_load (const char *cfg_file)
+{
+  std::ifstream ifs (cfg_file);
+  if (!ifs) {
+    fprintf (stderr, "Error: Cannot open %s\n", cfg_file);
+    exit (1);
+  }
+  root = cfg_load_node (ifs);
+  ifs.close ();
+}
+
+/*******************************************************************
+ *                      find function                              *
+ *******************************************************************/
+
+/* find the call node which has same id */
+static struct cfg_node *
+cfg_find_call_edges (unsigned int id, struct cfg_node *caller)
+{
+  struct cfg_node *callee, *true_edge, *false_edge;
+  if (caller == NULL) return NULL;
+  for (unsigned int i = 0; i < caller->call_edges.size (); i++) {
+    callee = caller->call_edges [i].second;
+    if (callee->id == id)
+      return callee;
+    if ((true_edge  = cfg_find_node (id, callee->true_edge))  != NULL)
+      return true_edge;
+    if ((false_edge = cfg_find_node (id, callee->false_edge)) != NULL)
+      return false_edge;
+    if ((callee = cfg_find_call_edges (id, callee)) != NULL)
+      return callee;
+  }
+  return NULL;
+}
+
+/* find the call node which has same entry */
+static struct cfg_node *
+cfg_find_call_edges (uint64_t entry, struct cfg_node *caller)
+{
+  struct cfg_node *callee, *true_edge, *false_edge;
+  if (caller == NULL) return NULL;
+  for (unsigned int i = 0; i < caller->call_edges.size (); i++) {
+    callee = caller->call_edges [i].second;
+    if (callee->entry == entry)
+      return callee;
+    if ((true_edge  = cfg_find_node (entry, callee->true_edge))  != NULL)
+      return true_edge;
+    if ((false_edge = cfg_find_node (entry, callee->false_edge)) != NULL)
+      return false_edge;
+    if ((callee = cfg_find_call_edges (entry, callee)) != NULL)
+      return callee;
+  }
+  return NULL;
+}
+
+/* find the branch node which has same id */
+static struct cfg_node *
+cfg_find_node (unsigned int id, struct cfg_node *node)
+{
+  struct cfg_node *callee, *true_edge, *false_edge;
+  if (node == NULL)
+    return NULL;
+  if (node->id == id)
+    return node;
+  if ((callee = cfg_find_call_edges (id, node)) != NULL)
+    return callee;
+  if ((true_edge  = cfg_find_node (id, node->true_edge))  != NULL)
+    return true_edge;
+  if ((false_edge = cfg_find_node (id, node->false_edge)) != NULL)
+    return false_edge;
+  return NULL;
+}
+
+/* find the branch node which has same entry */
+static struct cfg_node *
+cfg_find_node (uint64_t entry, struct cfg_node *node)
+{
+  struct cfg_node *callee, *true_edge, *false_edge;
+  if (node == NULL)
+    return NULL;
+  if (node->entry == entry)
+    return node;
+  if ((callee = cfg_find_call_edges (entry, node)) != NULL)
+    return callee;
+  if ((true_edge  = cfg_find_node (entry, node->true_edge))  != NULL)
+    return true_edge;
+  if ((false_edge = cfg_find_node (entry, node->false_edge)) != NULL)
+    return false_edge;
+  return NULL;
+}
+
+/*******************************************************************
+ *                        free function                            *
+ *******************************************************************/
+
+static void
+cfg_free_call (struct cfg_node *caller)
+{
+  if (caller == NULL)
+    return;
+
+  for (unsigned int i = 0; i < caller->call_edges.size (); i++) {
+    cfg_free_call (caller->call_edges [i].second);
+  }
+  free (caller);
+}
+
+static void
+cfg_free_node (struct cfg_node *node)
+{
+  if (node == NULL)
+    return;
+
+  cfg_free_node (node->true_edge);
+  cfg_free_node (node->false_edge);
+  cfg_free_call (node);
+}
+
+/*******************************************************************
+ *                        save function                            *
+ *******************************************************************/
+
+/* check whether the node has already saved or not */
+static bool
+in_save_map (struct cfg_node *node)
+{
+  if (save_map.find (node) != save_map.end ())
+    return true;
+  else
+    return false;
+}
+
+/* write CFG to ofs recursively */
+static void
+cfg_save_node (std::ofstream &ofs, struct cfg_node *node)
+{
+  /* ID: meta data to identify the node (1 origin) */
+  static unsigned int ID = 1;
+  unsigned int call_count, return_count, i;
+
+  if (node == NULL) {
+    ofs << 0 << " ";
+    return;
+  } else if (in_save_map (node)) {
+    /* Only write ID because this is not new node */
+    ofs << save_map [node] << " ";
+    return;
+  }
+
+  ofs << ID << " ";
+  save_map [node] = ID;
+  ID++;
+
+  ofs << node->id << " ";
+  ofs << node->entry << " ";
+  ofs << node->exit << " ";
+  cfg_save_node (ofs, node->true_edge);
+  cfg_save_node (ofs, node->false_edge);
+
+  call_count = node->call_edges.size ();
+  ofs << call_count << " ";
+  for (i = 0; i < call_count; i++) {
+    ofs << node->call_edges [i].first << " ";
+    cfg_save_node (ofs, node->call_edges [i].second);
+  }
+
+  return_count = node->return_edges.size ();
+  ofs << return_count << " ";
+  for (i = 0; i < return_count; i++) {
+    ofs << node->return_edges [i].first << " ";
+    cfg_save_node (ofs, node->return_edges [i].second);
+  }
+}
+
+/*******************************************************************
+ *                        load function                            *
+ *******************************************************************/
+
+/* parse unsigned integer from ifs */
+static unsigned int
+parse_uint (std::ifstream &ifs)
+{
+  char buffer [BUF_SIZE];
+  ifs.getline (buffer, BUF_SIZE, ' ');
+  return (unsigned int) atoi (buffer);
+}
+
+/* parse uint64_t from ifs */
+static uint64_t
+parse_uint64_t (std::ifstream &ifs)
+{
+  char buffer [BUF_SIZE];
+  ifs.getline (buffer, BUF_SIZE, ' ');
+  return (uint64_t) strtoul (buffer, NULL, 0);
+}
+
+/* parse cfg_node from ifs */
+static struct cfg_node *
+parse_node (std::ifstream &ifs)
+{
+  unsigned int id;
+  uint64_t entry, exit;
+
+  id = parse_uint (ifs);
+  if (cfg_node_id < id+1)
+    cfg_node_id = id+1;
+  entry = parse_uint64_t (ifs);
+  exit  = parse_uint64_t (ifs);
+
+  return new struct cfg_node (id, entry, exit);
+}
+
+/* check whether the node has already loaded or not */
+static bool
+in_load_map (unsigned int ID)
+{
+  if (load_map.find (ID) != load_map.end ())
+    return true;
+  else
+    return false;
+}
+
+/* load CFG from ifs recursively */
+static struct cfg_node *
+cfg_load_node (std::ifstream &ifs)
+{
+  unsigned int ID, call_count, return_count, i;
+  uint64_t call_addr, return_addr;
+  struct cfg_node *node;
+
+  ID = parse_uint (ifs);
+  if (ID == 0)
+    return NULL;
+  else if (in_load_map (ID))
+    /* already load the node */
+    return load_map [ID];
+
+  node = parse_node (ifs);
+  load_map [ID] = node;
+
+  node->true_edge  = cfg_load_node (ifs);
+  node->false_edge = cfg_load_node (ifs);
+
+  call_count = parse_uint (ifs);
+  for (i = 0; i < call_count; i++) {
+    call_addr = parse_uint64_t (ifs);
+    node->call_edges.push_back (std::make_pair (call_addr, cfg_load_node (ifs)));
+  }
+
+  return_count = parse_uint (ifs);
+  for (i = 0; i < return_count; i++) {
+    return_addr = parse_uint64_t (ifs);
+    node->return_edges.push_back (std::make_pair (return_addr, cfg_load_node (ifs)));
+  }
+
+  return node;
+}
+
 /*******************************************************************
  *                       print function                            *
  *******************************************************************/
@@ -385,8 +426,9 @@ cfg_check_validity (std::vector <struct cfg_node *> path)
 static void
 cfg_print_node (void)
 {
+  unsigned int i, j;
   struct cfg_node *cfg_node_i;
-  for (unsigned int i = 0; i < cfg_node_id; i++) {
+  for (i = 0; i < cfg_node_id; i++) {
     cfg_node_i = cfg_find_node (i, root);
     if (cfg_node_i == NULL)
       continue;
@@ -400,14 +442,12 @@ cfg_print_node (void)
     else
       printf ("false(NULL) ");
     printf ("Call {");
-    for (unsigned int j = 0; j < cfg_node_i->call_edges.size (); j++) {
-      printf ("BB%02u,", cfg_node_i->call_edges [j]->id); 
-    }
-    printf ("} ");
-    if (cfg_node_i->return_edge != NULL)
-      printf ("return(BB%02u)\n", cfg_node_i->return_edge->id);
-    else
-      printf ("return(NULL)\n");
+    for (j = 0; j < cfg_node_i->call_edges.size (); j++)
+      printf ("BB%02u,", cfg_node_i->call_edges [j].second->id);
+    printf ("} return {");
+    for (j = 0; j < cfg_node_i->return_edges.size (); j++)
+      printf ("BB%02u,", cfg_node_i->return_edges [j].second->id);
+    printf ("}\n");
   }
 }
 
@@ -444,13 +484,13 @@ cfg_print_call_edges (struct cfg_node *caller, unsigned int depth)
 
   for (unsigned int i = 0; i < caller->call_edges.size (); i++) {
     if (i == 0) {
-      printf (" -> BB%02u", caller->call_edges [i]->id);
-      cfg_print_call_edges (caller->call_edges [i], depth+1);
+      printf (" -> BB%02u", caller->call_edges [i].second->id);
+      cfg_print_call_edges (caller->call_edges [i].second, depth+1);
     } else {
       for (unsigned int j = 0; j < depth; j++)
         printf ("        ");
-      printf (" -> BB%02u", caller->call_edges [i]->id);
-      cfg_print_call_edges (caller->call_edges [i], depth+1);
+      printf (" -> BB%02u", caller->call_edges [i].second->id);
+      cfg_print_call_edges (caller->call_edges [i].second, depth+1);
     }
   }
 }

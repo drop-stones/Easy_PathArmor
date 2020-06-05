@@ -63,7 +63,7 @@ int
 cfg_generation_fini (void)
 {
   unload_binary (&bin);
-  cfg_free_all ();
+  cfg_free ();
   return 0;
 }
 
@@ -167,7 +167,7 @@ one_emulation (uint64_t start_addr, uint64_t end_addr)
 {
   cfg_create_root (start_addr);
   Section *sec = bin.get_text_section ();
-  uint64_t pc  = start_addr;
+  uint64_t pc  = start_addr, return_addr;
 
   while(sec->contains (pc)) {
     char mnemonic[32], operands[200];
@@ -181,10 +181,11 @@ one_emulation (uint64_t start_addr, uint64_t end_addr)
     triton::arch::Instruction insn;
     insn.setOpcode(sec->bytes+(pc-sec->vma), len);
     insn.setAddress(pc);
+    return_addr = insn.getNextAddress ();
 
     /* skip call to another section */
     if (!strncmp (mnemonic, "call", 4)) {
-      /* For only direct call */
+      /* To be fixed: For only direct call */
       uint64_t jump_pc = strtoul (operands, NULL, 0);
       if (!sec->contains (jump_pc)) {
         pc = insn.getNextAddress ();
@@ -195,11 +196,10 @@ one_emulation (uint64_t start_addr, uint64_t end_addr)
     engine.processing(insn);
     uint64_t next_pc = (uint64_t)engine.getConcreteRegisterValue(engine.getRegister(ip));
 
-    /* To be fixed */
     if (insn.isControlFlow ()) {
       if (insn.isBranch ()) {
         /* jmp */
-        cfg_set_exit_in_current_node (pc);
+        cfg_set_exit (pc);
         if (insn.isConditionTaken ()) {
           cfg_create_branch_node (next_pc, cfg_get_current_node (), true);
         } else {
@@ -207,7 +207,7 @@ one_emulation (uint64_t start_addr, uint64_t end_addr)
         }
       } else if (!strncmp (mnemonic, "call", 4)) {
         /* call */
-        cfg_create_call_node (next_pc, cfg_get_current_node ());
+        cfg_create_call_node (pc, return_addr, next_pc, cfg_get_current_node ());
       } else {
         /* ret */
         cfg_ret (pc);
@@ -215,7 +215,7 @@ one_emulation (uint64_t start_addr, uint64_t end_addr)
     }
 
     if(pc == end_addr) {
-      cfg_set_exit_in_current_node (pc);
+      cfg_set_exit (pc);
       break;
     }
 
