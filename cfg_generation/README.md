@@ -1,6 +1,6 @@
 # cfg_generation
 
-## To do
+## Done
 
 * 複数先へのreturnに対応
   * <returnアドレス, return_edge>のペアで保持
@@ -15,7 +15,14 @@
       * 方法1: edgeは参照のみを持つ
          * save: edgeは参照のみ書き込み
          * load: はじめに全てのnodeをロードした後、edgeを張り替える
-      * 方法2: まだSerializeしていないnodeは展開、既出のnodeは参照のみ
+      * <採用>方法2: まだSerializeしていないnodeは展開、既出のnodeは参照のみ
          * save: saveしたnodeを記録しておき、既出かどうか確認
          * load: nodeのidが既出かどうか確認
+## To do
+
+* ベーシックブロックの分割
+* 走査 (find function)
+  * 現在の、再帰関数による走査は、ループなどで、処理が終わらない可能性
+  * ループにも対応できるような走査が必要
+  * 走査済みベーシックブロックを保存?
 * Path Verificationの実装
