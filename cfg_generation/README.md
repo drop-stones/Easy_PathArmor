@@ -26,5 +26,6 @@
 ## To do
 
 * call_edges/return_edgesをmapで保持
+  * 順序を保持する機構が必要(直近のcallerがわからないといけない)
 * call edge/return edgeの同じ要素追加への対処 (for, whileなど)
 * Path Verificationの実装
