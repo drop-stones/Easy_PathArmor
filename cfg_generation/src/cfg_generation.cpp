@@ -200,17 +200,16 @@ one_emulation (uint64_t start_addr, uint64_t end_addr)
       if (insn.isBranch ()) {
         /* jmp */
         cfg_set_exit (pc);
-        if (insn.isConditionTaken ()) {
-          cfg_create_branch_node (next_pc, cfg_get_current_node (), true);
-        } else {
-          cfg_create_branch_node (next_pc, cfg_get_current_node (), false);
-        }
+        if (insn.isConditionTaken ())
+          cfg_jmp_process (next_pc, cfg_get_current_node (), true);
+        else
+          cfg_jmp_process (next_pc, cfg_get_current_node (), false);
       } else if (!strncmp (mnemonic, "call", 4)) {
         /* call */
-        cfg_create_call_node (pc, return_addr, next_pc, cfg_get_current_node ());
+        cfg_call_process (pc, return_addr, next_pc, cfg_get_current_node ());
       } else {
         /* ret */
-        cfg_ret (pc);
+        cfg_ret_process (pc);
       }
     }
 

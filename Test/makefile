@@ -7,9 +7,9 @@ CC=gcc-4.9
 CXX=g++-4.9
 CXXFLAGS=-Wall -Wno-unknown-pragmas -Wno-unused-variable -O2 -std=c++11 -fno-stack-protector
 
-.PHONY: all cfg_test cfg_load test01 bb_divide
+.PHONY: all cfg_test cfg_load test01 bb_divide loop
 
-all: branch cfg_load multi_ref bb_divide test01
+all: branch cfg_load multi_ref bb_divide loop test01
 
 branch: branch/branch.c
 	cd branch && $(CC) -o branch branch.c
@@ -23,6 +23,9 @@ multi_ref: cfg_test/multi_ref/multi_ref.cpp
 bb_divide: cfg_test/bb_divide/bb_divide.cpp
 	cd cfg_test/bb_divide && $(CXX) -o bb_divide bb_divide.cpp
 
+loop: cfg_test/loop/loop.cpp
+	cd cfg_test/loop && $(CXX) -o loop loop.cpp
+
 test01: test01/test01.c
 	cd test01 && $(CC) -o test01 test01.c
 
@@ -30,5 +33,5 @@ test01: test01/test01.c
 clean:
 	rm -f branch/branch cfg_test/cfg_load cfg_test/multi_ref/multi_ref cfg_test/multi_ref/cfg.txt \
 	      cfg_test/test01/cfg.txt cfg_test/bb_divide/bb_divide cfg_test/bb_divide/cfg.txt \
-	       test01/test01 test01/cfg.txt
+	      cfg_test/loop/loop cfg_test/loop/cfg.txt test01/test01 test01/cfg.txt
 

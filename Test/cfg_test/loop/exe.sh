@@ -4,10 +4,10 @@ PATH_ARMOR=/home/binary/code/PathArmor
 CFG_GEN=$PATH_ARMOR/cfg_generation
 CFG_TEST=$PATH_ARMOR/Test/cfg_test
 
-NAME=bb_divide
+NAME=loop
 WD=$CFG_TEST/$NAME
-ENTRY=0x400546
-EXIT=0x400570
+ENTRY=0x400536
+EXIT=0x40055b
 
 echo -e "$ cat $NAME.cpp\n"
 cat $WD/$NAME.cpp
