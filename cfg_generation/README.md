@@ -22,11 +22,12 @@
   * cfg_divide_node ()
 * 走査 (find function)
   * 走査済みベーシックブロックを保存してループに対処 (searched_set)
-  
+* call_edges/return_edgesのデータ構造を変更
+  * call: map <addr, set <cfg_node> >に変更
+  * return: map <addr, cfg_node>に変更
+* call edge/return edgeの同じ要素追加への対処 (for, whileなど)
+
 ## To do
 
-* call_edges/return_edgesのデータ構造を変更
-  * ユニークなもの (重複要素を持たない)
-  * 順序を持つ (直近のcall, returnがわかる)
-* call edge/return edgeの同じ要素追加への対処 (for, whileなど)
+
 * Path Verificationの実装
