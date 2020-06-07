@@ -1,4 +1,4 @@
 Pin: pin-3.6-97554-31f0a167d
 Copyright (c) 2003-2017, Intel Corporation. All rights reserved.
-A:  Source/pin/pin/image.cpp: RTN_InsHead: 4437: Call RTN_Open(rtn) before inspecting the instructions of an RTN.
+A:  Source/pin/pin/image.cpp: INS_DirectBranchOrCallTargetAddress: 2298: assertion failed: INS_IsDirectBranchOrCall(ins)
 

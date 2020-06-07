@@ -10,57 +10,66 @@
 #include "pin.H"
 #include "/home/binary/code/PathArmor/cfg_generation/src/cfg.hpp"
 
-static uint64_t start_addr;
-static uint64_t end_addr;
-static bool     record_flag = false;
-static std::vector<uint64_t> call_stack;
-static std::vector<struct cfg_node *> path;
+static uint64_t start_addr, end_addr;
+static bool instrument_flag = false;
+//static bool in_text_section = false
+static std::vector<uint64_t> call_stack, path;
+
+static bool
+check_flag (bool old_bool, uint64_t addr)
+{
+  if (addr == start_addr) {
+    path.push_back (start_addr);
+    return true;
+  } else if (addr == end_addr) {
+    path.push_back (end_addr);
+    return false;
+  } else
+    return old_bool;
+}
+
+static bool
+check_text_section (INS ins)
+{
+  RTN rtn = INS_Rtn (ins);
+  SEC sec = RTN_Sec (rtn);
+  IMG img = SEC_Img (sec);
+
+  if (!IMG_Valid (img) || !IMG_IsMainExecutable (img))
+    return false;
+  if (!SEC_Valid (sec) || strncmp (SEC_Name (sec).c_str (), ".text", 5))
+    return false;
+  if (INS_IsDirectBranchOrCall (ins)) {
+    /* Only direct branch or call */
+    ADDRINT target_addr = INS_DirectBranchOrCallTargetAddress (ins);
+    rtn = RTN_FindByAddress (target_addr);
+    sec = RTN_Sec (rtn);
+    img = SEC_Img (sec);
+    if (!IMG_Valid (img) || !IMG_IsMainExecutable (img))
+      return false;
+    if (!SEC_Valid (sec) || strncmp (SEC_Name (sec).c_str (), ".text", 5))
+      return false;
+  }
+  return true;
+}
 
 /*****************************************************************************
  *                             Analysis functions                            *
  *****************************************************************************/
 
-
-/* 
- * 
- */
 static void
-branch_record (ADDRINT bb_exit, ADDRINT next_bb_entry)
+branch_record (ADDRINT exit, ADDRINT next_entry)
 {
-  /*
-  PIN_LockClient ();
-
-  IMG now_img, next_img;
-  now_img  = IMG_FindByAddress (bb_exit);
-  next_img = IMG_FindByAddress (next_bb_entry);
-  if (!IMG_Valid (now_img) || !IMG_Valid (next_img))
-    return;
-  if (!IMG_IsMainExecutable (now_img) && !IMG_IsMainExecutable (next_img))
-    return;
-
-  PIN_UnlockClient ();
-  */
-
-  //if (path.back ()->exit != bb_exit)
- /* struct cfg_node *root = cfg_get_root ();
-  struct cfg_node *next_BB = cfg_find_node_from_entry (next_bb_entry, root);
-  if (next_BB == NULL) {
-    fprintf (stderr, "** Find CFG Node Error **\n0x%jx: 0x%jx is not found.\n", bb_exit, next_bb_entry);
-    exit (1);
-  }
-
-  path.push_back (next_BB);
- */
+  path.push_back (exit);
+  path.push_back (next_entry);
 }
 
-/* 
- * 
- */
 static void
 call_record (ADDRINT caller_addr, ADDRINT callee_addr, ADDRINT return_addr)
 {
   call_stack.push_back (return_addr);
-  branch_record (caller_addr, callee_addr);
+  path.push_back (caller_addr);
+  path.push_back (callee_addr);
 }
 
 static void
@@ -73,6 +82,14 @@ return_record (ADDRINT exit_addr, ADDRINT target_addr, CONTEXT *context)
     exit (1);
   }
   call_stack.pop_back ();
+  path.push_back (exit_addr);
+  path.push_back (target_addr);
+}
+
+static void
+check_validity (ADDRINT syscall_addr, ADDRINT syscall_number)
+{
+
 }
 
 /*****************************************************************************
@@ -82,12 +99,6 @@ return_record (ADDRINT exit_addr, ADDRINT target_addr, CONTEXT *context)
 static void
 instrument_branch (INS ins, void *v)
 {
-  if (start_addr == (uint64_t)INS_Address (ins))
-    record_flag = true;
-  else if (end_addr == (uint64_t)INS_Address (ins))
-    record_flag = false;
-
-  if (!record_flag) return;
   if (!INS_IsBranch (ins)) return;
 
   INS_InsertPredicatedCall(
@@ -107,7 +118,6 @@ instrument_branch (INS ins, void *v)
 static void
 instrument_call (INS ins, void *v)
 {
-  if (!record_flag) return;
   if (!INS_IsCall (ins)) return;
 
   INS_InsertPredicatedCall(
@@ -121,18 +131,17 @@ instrument_call (INS ins, void *v)
 static void
 instrument_return (INS ins, void *v)
 {
-  if (!record_flag) return;
   if (!INS_IsRet (ins)) return;
 
-  INS_InsertPredicatedCall(
-    ins, IPOINT_TAKEN_BRANCH, (AFUNPTR)call_record,
+  INS_InsertPredicatedCall (
+    ins, IPOINT_TAKEN_BRANCH, (AFUNPTR) call_record,
     IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR,
     IARG_CONTEXT,
     IARG_END
   );
   if (INS_HasFallThrough (ins)) {
-    INS_InsertPredicatedCall(
-      ins, IPOINT_AFTER, (AFUNPTR)return_record,
+    INS_InsertPredicatedCall (
+      ins, IPOINT_AFTER, (AFUNPTR) return_record,
       IARG_INST_PTR, IARG_ADDRINT, 0,
       IARG_CONTEXT,
       IARG_END
@@ -143,49 +152,53 @@ instrument_return (INS ins, void *v)
 static void
 instrument_syscall (INS ins, void *v)
 {
-  if (!record_flag) return;
   if (!INS_IsSyscall (ins)) return;
+
+  INS_InsertPredicatedCall (
+    ins, IPOINT_BEFORE, (AFUNPTR) check_validity,
+    IARG_INST_PTR, IARG_SYSCALL_NUMBER,
+    IARG_END
+  );
 }
 
 static void
-instrument_rtn (RTN rtn)
+instrument_ins (INS ins, void *v)
 {
-  INS ins;
-  /* ins != INS_Next (RTN_InsTail (rtn)) ?? */
-  for (ins = RTN_InsHead (rtn); ins != RTN_InsTail (rtn); ins = INS_Next (ins)) {
-    
-  }
+  if (!(instrument_flag = check_flag (instrument_flag, (uint64_t)INS_Address (ins))))
+    return;
+  if (!check_text_section (ins))
+    return;
+
+  instrument_branch  (ins, NULL);
+  instrument_call    (ins, NULL);
+  instrument_return  (ins, NULL);
+  instrument_syscall (ins, NULL);
 }
 
 static void
-instrument_text_section (SEC sec)
+instrument_rtn (RTN rtn, void *v)
 {
-  if (strncmp (SEC_Name (sec).c_str (), ".text", 5))
-    return;
+  if (!RTN_Valid (rtn)) return;
+  SEC sec = RTN_Sec (rtn);
+  if (!SEC_Valid (sec)) return;
+  IMG img = SEC_Img (sec);
+  if (!IMG_Valid (img) || !IMG_IsMainExecutable (img)) return;
+  if (strncmp (SEC_Name (sec).c_str (), ".text", 5) != 0) return;
 
-  RTN rtn;
-  /* rtn != SEC_RtnTail (sec) ?? RTN_Next (SEC_RtnTail (sec)) ?? */
-  for (rtn = SEC_RtnHead (sec); rtn != RTN_Next (SEC_RtnTail (sec)); rtn = RTN_Next (rtn)) {
-    instrument_rtn (rtn);
-  }
-}
+  fprintf (stderr, "sec = %s\n", SEC_Name (sec).c_str ());
 
-static void
-instrument_section (IMG img, void *v)
-{
-  if (!IMG_Valid (img))
-    return;
-  if (!IMG_IsMainExecutable (img))
-    return;
-
-  SEC sec;
-  for (sec = IMG_SecHead (img); SEC_Valid (sec); sec = SEC_Next (sec)) {
-    fprintf (stderr, "%s\n", SEC_Name (sec).c_str ());
-    if (!strncmp (SEC_Name (sec).c_str (), ".text", 5)) {
-      /* sec = .text */
-      instrument_text_section (sec);
+  RTN_Open (rtn);
+  for (INS ins = RTN_InsHead (rtn); INS_Valid (ins); ins = INS_Next (ins)) {
+    /* instrument INS */
+    uint64_t ins_addr = (uint64_t) INS_Address (ins);
+    if (start_addr <= ins_addr && ins_addr <= end_addr) {
+      instrument_branch  (ins, NULL);
+      instrument_call    (ins, NULL);
+      instrument_return  (ins, NULL);
+      instrument_syscall (ins, NULL);
     }
   }
+  RTN_Close (rtn);
 }
 
 /*****************************************************************************
@@ -195,6 +208,9 @@ instrument_section (IMG img, void *v)
 static void
 print_path ()
 {
+  for (unsigned int i = 0; i < path.size () - 1; i++)
+   printf ("0x%jx -> ", path [i]);
+  printf ("0x%jx\n", path.back ());
 }
 
 static void
@@ -224,7 +240,7 @@ main(int argc, char *argv[])
   cfg_load (argv [argc-1]);
   cfg_print ();
 
-  IMG_AddInstrumentFunction (instrument_section, NULL);
+  INS_AddInstrumentFunction (instrument_ins, NULL);
   PIN_AddFiniFunction(fini, NULL);
 
   PIN_StartProgram();
