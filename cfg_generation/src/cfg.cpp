@@ -1,3 +1,4 @@
+#include <stack>
 #include "cfg.hpp"
 
 #define  BUF_SIZE 20
@@ -8,6 +9,8 @@ static unsigned int cfg_node_id = 0;
 static std::map <struct cfg_node *, unsigned int> save_map;
 static std::map <unsigned int, struct cfg_node *> load_map;
 static std::set <struct cfg_node *> searched_set;
+static std::stack <uint64_t> call_stack;
+
 
 static void cfg_save_node (std::ofstream &ofs, struct cfg_node *node);
 static struct cfg_node *cfg_load_node (std::ifstream &ifs);
@@ -17,6 +20,12 @@ static struct cfg_node *cfg_find_node (unsigned int id, struct cfg_node *node);
 static struct cfg_node *cfg_find_node (uint64_t addr, struct cfg_node *node);
 static struct cfg_node *cfg_find (unsigned int id);
 static struct cfg_node *cfg_find (uint64_t addr);
+
+static bool check_one_addr_validity (struct cfg_node *check_node, std::deque <uint64_t> path);
+static bool check_entry_validity    (struct cfg_node *check_node, std::deque <uint64_t> path);
+static bool check_exit_validity     (struct cfg_node *check_node, std::deque <uint64_t> path);
+static bool check_call_validity     (struct cfg_node *check_node, std::deque <uint64_t> path);
+static bool check_return_validity   (struct cfg_node *check_node, std::deque <uint64_t> path);
 
 /*******************************************************************
  *                       public function                           *
@@ -170,31 +179,149 @@ cfg_free (void)
   cfg_free_node (root);
 }
 
-/* check whether the path is valid or not */
-bool
-cfg_check_validity (std::vector <struct cfg_node *> path)
+static bool
+check_one_addr_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
 {
-  if (path.size () == 0)
+  if (path.empty ())
+    return true;
+  if (check_node->entry == path.front ())
+    return check_entry_validity (check_node, path);
+  if (check_node->exit  == path.front ())
+    return check_exit_validity (check_node, path);
+  if (check_node->call_edges.find (path.front ()) != check_node->call_edges.end ())
+    return check_call_validity (check_node, path);
+  if (check_node->return_edges.find (path.front ()) != check_node->return_edges.end ())
+    return check_return_validity (check_node, path);
+
+  return false;
+}
+
+static bool
+check_entry_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
+{
+  if (path.empty ())
+    return true;
+  if (check_node->entry != path.front ())
+    return false;
+
+#ifdef DEBUG
+  printf ("  entry : 0x%jx\n", path.front ());
+#endif
+
+  uint64_t entry = path.front ();
+  path.pop_front ();
+  if (path.empty ())
+    return true;
+  if (check_node->entry <= path.front () && path.front () <= check_node->exit)
+    /* target addr of jmp */
+    return check_one_addr_validity (check_node, path);
+  else {
+    /* call addr */
+    path.push_front (entry);
+    return check_call_validity (check_node, path);
+  }
+}
+
+static bool
+check_exit_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
+{
+  if (path.empty ())
+    return true;
+  if (check_node->exit != path.front ())
+    return false;
+
+#ifdef DEBUG
+  printf ("  exit  : 0x%jx\n", path.front ());
+#endif
+
+  path.pop_front ();
+  if (path.empty ())
+    return true;
+  if (check_node->true_edge  != NULL && check_node->true_edge->entry == path.front ())
+    return check_entry_validity (check_node->true_edge, path);
+  if (check_node->false_edge != NULL && check_node->false_edge->entry == path.front ())
+    return check_entry_validity (check_node->false_edge, path);
+  if (check_node->exit == path.front ())
+    return check_exit_validity (check_node, path);
+  if (check_node->call_edges.find (path.front ()) != check_node->call_edges.end ())
+    return check_call_validity (check_node, path);
+  if (check_node->return_edges.find (path.front ()) != check_node->return_edges.end ())
+    return check_return_validity (check_node, path);
+
+  return false;
+}
+
+static bool
+check_call_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
+{
+  if (path.empty ())
     return true;
 
-  struct cfg_node *cfg_ite, *path_ite;
-  cfg_ite  = cfg_find (path [0]->entry);
-  printf ("  check validity: 0 is checking...\n");
-  if (cfg_ite == NULL || cfg_ite->id != path [0]->id)
+  std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
+  std::set <struct cfg_node *>::iterator callee_itr;
+  std::set <struct cfg_node *> callee_set;
+  struct cfg_node *callee;
+
+  call_itr = check_node->call_edges.find (path.front ());
+  if (call_itr == check_node->call_edges.end ())
     return false;
-  for (unsigned int i = 1; i < path.size (); i++) {
-    printf ("  check validity: %d is checking...\n", i);
-    if (i == path.size () - 1)
-      return true;
-    path_ite = path [i];
-    if (cfg_ite->true_edge != NULL && cfg_ite->true_edge->id == path_ite->id)
-      cfg_ite = cfg_ite->true_edge;
-    else if (cfg_ite->false_edge != NULL && cfg_ite->false_edge->id == path_ite->id)
-      cfg_ite = cfg_ite->false_edge;
-    else
-      return false;
+
+#ifdef DEBUG
+  printf ("  call  : 0x%jx\n", path.front ());
+#endif
+
+  path.pop_front ();
+  if (path.empty ())
+    return true;
+  callee_set = call_itr->second;
+  for (callee_itr = callee_set.begin (); callee_itr != callee_set.end (); callee_itr++) {
+    callee = *callee_itr;
+    if (callee->entry == path.front ())
+      return check_entry_validity (callee, path);
   }
-  return true;
+
+  return false;
+}
+
+static bool
+check_return_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
+{
+  if (path.empty ())
+    return true;
+
+  std::map <uint64_t, struct cfg_node *>::iterator return_itr;
+  struct cfg_node *caller;
+
+  return_itr = check_node->return_edges.find (path.front ());
+  if (return_itr == check_node->return_edges.end ())
+    return  false;
+
+#ifdef DEBUG
+  printf ("  return: 0x%jx\n", path.front ());
+#endif
+
+  /* return addr */
+  path.pop_front ();
+  if (path.empty ())
+    return true;
+  caller = return_itr->second;
+  if (!(caller->entry <= path.front () && path.front () <= caller->exit))
+    return false;
+
+  /* target addr */
+  //path.pop_front ();
+  return check_one_addr_validity (caller, path);
+}
+
+/* check whether the path is valid or not */
+bool
+cfg_check_validity (std::deque <uint64_t> path)
+{
+  if (path.empty ())
+    return true;
+
+  struct cfg_node *check_node = cfg_find (path.front ());
+  return check_one_addr_validity (check_node, path);
 }
 
 /* save CFG in cfg_file */
@@ -554,11 +681,11 @@ cfg_print_node (void)
     printf ("Call {");
     for (call_itr = cfg_node_i->call_edges.begin (); call_itr != cfg_node_i->call_edges.end (); call_itr++)
       for (callee_itr = call_itr->second.begin (); callee_itr != call_itr->second.end (); callee_itr++)
-        printf ("BB%02u,", (*callee_itr)->id);
+        printf ("BB%02u@0x%jx,", (*callee_itr)->id, call_itr->first);
     printf ("} return {");
     for (return_itr = cfg_node_i->return_edges.begin (); return_itr != cfg_node_i->return_edges.end ();
             return_itr++)
-      printf ("BB%02u,", return_itr->second->id);
+      printf ("BB%02u@0x%jx,", return_itr->second->id, return_itr->first);
     printf ("}\n");
   }
 }

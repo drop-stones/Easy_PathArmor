@@ -3,7 +3,7 @@
 #include <string.h>
 #include <assert.h>
 #include <map>
-#include <vector>
+#include <deque>
 #include <string>
 #include <algorithm>
 
@@ -12,8 +12,7 @@
 
 static uint64_t start_addr, end_addr;
 static bool instrument_flag = false;
-//static bool in_text_section = false
-static std::vector<uint64_t> call_stack, path;
+static std::deque <uint64_t> path;
 
 static bool
 check_flag (bool old_bool, uint64_t addr)
@@ -67,29 +66,24 @@ branch_record (ADDRINT exit, ADDRINT next_entry)
 static void
 call_record (ADDRINT caller_addr, ADDRINT callee_addr, ADDRINT return_addr)
 {
-  call_stack.push_back (return_addr);
   path.push_back (caller_addr);
   path.push_back (callee_addr);
 }
 
 static void
-return_record (ADDRINT exit_addr, ADDRINT target_addr, CONTEXT *context)
+return_record (ADDRINT exit_addr, ADDRINT target_addr)
 {
-  ADDRINT return_addr = call_stack.back ();
-  if (target_addr != return_addr) {
-    fprintf (stderr, "** call/return matching Error **\n0x%jx: return to 0x%jx but 0x%jx\n",
-               exit_addr, target_addr, return_addr);
-    exit (1);
-  }
-  call_stack.pop_back ();
   path.push_back (exit_addr);
   path.push_back (target_addr);
 }
 
 static void
-check_validity (ADDRINT syscall_addr, ADDRINT syscall_number)
+path_verification (ADDRINT syscall_addr, ADDRINT syscall_number)
 {
-
+  if (cfg_check_validity (path))
+    fprintf (stderr, "valid\n");
+  else
+    fprintf (stderr, "invalid\n");
 }
 
 /*****************************************************************************
@@ -101,14 +95,14 @@ instrument_branch (INS ins, void *v)
 {
   if (!INS_IsBranch (ins)) return;
 
-  INS_InsertPredicatedCall(
-    ins, IPOINT_TAKEN_BRANCH, (AFUNPTR)branch_record,
+  INS_InsertPredicatedCall (
+    ins, IPOINT_TAKEN_BRANCH, (AFUNPTR) branch_record,
     IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR,
     IARG_END
   );
   if (INS_HasFallThrough (ins)) {
-    INS_InsertPredicatedCall(
-      ins, IPOINT_AFTER, (AFUNPTR)branch_record, 
+    INS_InsertPredicatedCall (
+      ins, IPOINT_AFTER, (AFUNPTR) branch_record, 
       IARG_INST_PTR, IARG_FALLTHROUGH_ADDR,
       IARG_END
     );
@@ -120,8 +114,8 @@ instrument_call (INS ins, void *v)
 {
   if (!INS_IsCall (ins)) return;
 
-  INS_InsertPredicatedCall(
-    ins, IPOINT_TAKEN_BRANCH, (AFUNPTR)call_record,
+  INS_InsertPredicatedCall (
+    ins, IPOINT_TAKEN_BRANCH, (AFUNPTR) call_record,
     IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR,
     IARG_RETURN_IP,
     IARG_END
@@ -136,17 +130,17 @@ instrument_return (INS ins, void *v)
   INS_InsertPredicatedCall (
     ins, IPOINT_TAKEN_BRANCH, (AFUNPTR) call_record,
     IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR,
-    IARG_CONTEXT,
     IARG_END
   );
+/*
   if (INS_HasFallThrough (ins)) {
     INS_InsertPredicatedCall (
       ins, IPOINT_AFTER, (AFUNPTR) return_record,
       IARG_INST_PTR, IARG_ADDRINT, 0,
-      IARG_CONTEXT,
       IARG_END
     );
   }
+*/
 }
 
 static void
@@ -155,7 +149,7 @@ instrument_syscall (INS ins, void *v)
   if (!INS_IsSyscall (ins)) return;
 
   INS_InsertPredicatedCall (
-    ins, IPOINT_BEFORE, (AFUNPTR) check_validity,
+    ins, IPOINT_BEFORE, (AFUNPTR) path_verification,
     IARG_INST_PTR, IARG_SYSCALL_NUMBER,
     IARG_END
   );
@@ -208,15 +202,18 @@ instrument_rtn (RTN rtn, void *v)
 static void
 print_path ()
 {
-  for (unsigned int i = 0; i < path.size () - 1; i++)
-   printf ("0x%jx -> ", path [i]);
-  printf ("0x%jx\n", path.back ());
+  while (path.size () != 1) {
+   printf ("0x%jx -> ", path.front ());
+   path.pop_front ();
+  }
+  printf ("0x%jx\n", path.front ());
 }
 
 static void
 fini(INT32 code, void *v)
 {
-  print_path ();
+  path_verification (0, 0);
+  //print_path ();
 }
 
 int
@@ -238,7 +235,6 @@ main(int argc, char *argv[])
   end_addr   = (uint64_t) strtoul (argv [argc-2], NULL, 0);
 
   cfg_load (argv [argc-1]);
-  cfg_print ();
 
   INS_AddInstrumentFunction (instrument_ins, NULL);
   PIN_AddFiniFunction(fini, NULL);

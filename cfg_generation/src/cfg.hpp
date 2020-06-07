@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <map>
 #include <set>
-#include <vector>
+#include <deque>
 #include <iostream>
 #include <fstream>
 
@@ -51,5 +51,6 @@ struct cfg_node *cfg_jmp_process (uint64_t entry, struct cfg_node *parent_node, 
 struct cfg_node *cfg_call_process (uint64_t call_addr, uint64_t return_addr, uint64_t entry, struct cfg_node *caller);
 struct cfg_node *cfg_ret_process (uint64_t exit);
 void   cfg_free (void);
-bool cfg_check_validity (std::vector <struct cfg_node *> path);
+//bool cfg_check_validity (std::vector <struct cfg_node *> path);
+bool cfg_check_validity (std::deque <uint64_t> path);
 void cfg_print (void);
