@@ -20,6 +20,9 @@ PathArmor$ make
   * CFG作成の修正
     * 複数のreturn先を持つことに対応してなかった!!
     * ベーシックブロックの分割に対応
-* To do
   * kernel module with Pin
   * Path Verification
+  * direct jump, direct call/return Verification
+* To do
+  * indirect jump Verification
+  * indirect call Verification
