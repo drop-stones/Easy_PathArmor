@@ -1,6 +1,7 @@
 #include <stack>
 #include "cfg.hpp"
 
+#define DEBUG 1
 #define  BUF_SIZE 20
 
 static struct cfg_node *root;
@@ -14,7 +15,6 @@ static std::stack <uint64_t> call_stack;
 
 static void cfg_save_node (std::ofstream &ofs, struct cfg_node *node);
 static struct cfg_node *cfg_load_node (std::ifstream &ifs);
-//static void cfg_free_call (struct cfg_node *caller);
 static void cfg_free_node (struct cfg_node *subroot_node);
 static struct cfg_node *cfg_find_node (unsigned int id, struct cfg_node *node);
 static struct cfg_node *cfg_find_node (uint64_t addr, struct cfg_node *node);
@@ -179,140 +179,6 @@ cfg_free (void)
   cfg_free_node (root);
 }
 
-static bool
-check_one_addr_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
-{
-  if (path.empty ())
-    return true;
-  if (check_node->entry == path.front ())
-    return check_entry_validity (check_node, path);
-  if (check_node->exit  == path.front ())
-    return check_exit_validity (check_node, path);
-  if (check_node->call_edges.find (path.front ()) != check_node->call_edges.end ())
-    return check_call_validity (check_node, path);
-  if (check_node->return_edges.find (path.front ()) != check_node->return_edges.end ())
-    return check_return_validity (check_node, path);
-
-  return false;
-}
-
-static bool
-check_entry_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
-{
-  if (path.empty ())
-    return true;
-  if (check_node->entry != path.front ())
-    return false;
-
-#ifdef DEBUG
-  printf ("  entry : 0x%jx\n", path.front ());
-#endif
-
-  uint64_t entry = path.front ();
-  path.pop_front ();
-  if (path.empty ())
-    return true;
-  if (check_node->entry <= path.front () && path.front () <= check_node->exit)
-    /* target addr of jmp */
-    return check_one_addr_validity (check_node, path);
-  else {
-    /* call addr */
-    path.push_front (entry);
-    return check_call_validity (check_node, path);
-  }
-}
-
-static bool
-check_exit_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
-{
-  if (path.empty ())
-    return true;
-  if (check_node->exit != path.front ())
-    return false;
-
-#ifdef DEBUG
-  printf ("  exit  : 0x%jx\n", path.front ());
-#endif
-
-  path.pop_front ();
-  if (path.empty ())
-    return true;
-  if (check_node->true_edge  != NULL && check_node->true_edge->entry == path.front ())
-    return check_entry_validity (check_node->true_edge, path);
-  if (check_node->false_edge != NULL && check_node->false_edge->entry == path.front ())
-    return check_entry_validity (check_node->false_edge, path);
-  if (check_node->exit == path.front ())
-    return check_exit_validity (check_node, path);
-  if (check_node->call_edges.find (path.front ()) != check_node->call_edges.end ())
-    return check_call_validity (check_node, path);
-  if (check_node->return_edges.find (path.front ()) != check_node->return_edges.end ())
-    return check_return_validity (check_node, path);
-
-  return false;
-}
-
-static bool
-check_call_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
-{
-  if (path.empty ())
-    return true;
-
-  std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
-  std::set <struct cfg_node *>::iterator callee_itr;
-  std::set <struct cfg_node *> callee_set;
-  struct cfg_node *callee;
-
-  call_itr = check_node->call_edges.find (path.front ());
-  if (call_itr == check_node->call_edges.end ())
-    return false;
-
-#ifdef DEBUG
-  printf ("  call  : 0x%jx\n", path.front ());
-#endif
-
-  path.pop_front ();
-  if (path.empty ())
-    return true;
-  callee_set = call_itr->second;
-  for (callee_itr = callee_set.begin (); callee_itr != callee_set.end (); callee_itr++) {
-    callee = *callee_itr;
-    if (callee->entry == path.front ())
-      return check_entry_validity (callee, path);
-  }
-
-  return false;
-}
-
-static bool
-check_return_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
-{
-  if (path.empty ())
-    return true;
-
-  std::map <uint64_t, struct cfg_node *>::iterator return_itr;
-  struct cfg_node *caller;
-
-  return_itr = check_node->return_edges.find (path.front ());
-  if (return_itr == check_node->return_edges.end ())
-    return  false;
-
-#ifdef DEBUG
-  printf ("  return: 0x%jx\n", path.front ());
-#endif
-
-  /* return addr */
-  path.pop_front ();
-  if (path.empty ())
-    return true;
-  caller = return_itr->second;
-  if (!(caller->entry <= path.front () && path.front () <= caller->exit))
-    return false;
-
-  /* target addr */
-  //path.pop_front ();
-  return check_one_addr_validity (caller, path);
-}
-
 /* check whether the path is valid or not */
 bool
 cfg_check_validity (std::deque <uint64_t> path)
@@ -320,6 +186,8 @@ cfg_check_validity (std::deque <uint64_t> path)
   if (path.empty ())
     return true;
 
+  while (!call_stack.empty ())
+    call_stack.pop ();
   struct cfg_node *check_node = cfg_find (path.front ());
   return check_one_addr_validity (check_node, path);
 }
@@ -471,15 +339,6 @@ cfg_find (uint64_t addr)
 /*******************************************************************
  *                        free function                            *
  *******************************************************************/
-/*
-static void
-cfg_free_call (struct cfg_node *caller)
-{
-  if (caller == NULL)
-    return;
-
-}
-*/
 
 static void
 cfg_free_node (struct cfg_node *node)
@@ -494,6 +353,7 @@ cfg_free_node (struct cfg_node *node)
   cfg_free_node (node->false_edge);
   node->call_edges.clear ();
   node->return_edges.clear ();
+  free (node->latest_return_edge);
   free (node);
 }
 
@@ -650,6 +510,159 @@ cfg_load_node (std::ifstream &ifs)
   }
 
   return node;
+}
+
+/*******************************************************************
+ *                    verification function                        *
+ *******************************************************************/
+static bool
+check_one_addr_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
+{
+  if (path.empty ())
+    return true;
+  if (check_node->entry == path.front ())
+    return check_entry_validity (check_node, path);
+  if (check_node->exit  == path.front ())
+    return check_exit_validity (check_node, path);
+  if (check_node->call_edges.find (path.front ()) != check_node->call_edges.end ())
+    return check_call_validity (check_node, path);
+  if (check_node->return_edges.find (path.front ()) != check_node->return_edges.end ())
+    return check_return_validity (check_node, path);
+
+  return false;
+}
+
+static bool
+check_entry_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
+{
+  if (path.empty ())
+    return true;
+  if (check_node->entry != path.front ())
+    return false;
+
+#ifdef DEBUG
+  printf ("  entry : 0x%jx\n", path.front ());
+#endif
+
+  uint64_t entry = path.front ();
+  path.pop_front ();
+  if (path.empty ())
+    return true;
+  if (check_node->entry <= path.front () && path.front () <= check_node->exit)
+    /* target addr of jmp */
+    return check_one_addr_validity (check_node, path);
+  else {
+    /* call@entry */
+    path.push_front (entry);
+    return check_call_validity (check_node, path);
+  }
+}
+
+static bool
+check_exit_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
+{
+  if (path.empty ())
+    return true;
+  if (check_node->exit != path.front ())
+    return false;
+
+#ifdef DEBUG
+  printf ("  exit  : 0x%jx\n", path.front ());
+#endif
+
+  path.pop_front ();
+  if (path.empty ())
+    return true;
+  if (check_node->true_edge  != NULL && check_node->true_edge->entry == path.front ())
+    return check_entry_validity (check_node->true_edge, path);
+  if (check_node->false_edge != NULL && check_node->false_edge->entry == path.front ())
+    return check_entry_validity (check_node->false_edge, path);
+  if (check_node->exit == path.front ())
+    return check_exit_validity (check_node, path);
+  if (check_node->call_edges.find (path.front ()) != check_node->call_edges.end ())
+    return check_call_validity (check_node, path);
+  if (check_node->return_edges.find (path.front ()) != check_node->return_edges.end ())
+    return check_return_validity (check_node, path);
+
+  return false;
+}
+
+static bool
+check_call_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
+{
+  if (path.empty ())
+    return true;
+
+  std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
+  std::set <struct cfg_node *>::iterator callee_itr;
+  std::set <struct cfg_node *> callee_set;
+  struct cfg_node *callee;
+  uint64_t call_addr;
+  unsigned int len;
+
+  call_itr = check_node->call_edges.find (path.front ());
+  if (call_itr == check_node->call_edges.end ())
+    return false;
+
+#ifdef DEBUG
+  printf ("  call  : 0x%jx\n", path.front ());
+#endif
+
+  call_addr = path.front ();
+  path.pop_front ();
+  if (path.empty ())
+    return true;
+  callee_set = call_itr->second;
+  for (callee_itr = callee_set.begin (); callee_itr != callee_set.end (); callee_itr++) {
+    callee = *callee_itr;
+    if (callee->entry == path.front ()) {
+      for (len = 2; len <= 6; len++) {
+        if (callee->return_edges.find (call_addr + len) != callee->return_edges.end ()) {
+          call_stack.push (call_addr + len);
+#ifdef DEBUG
+  printf ("  push  : 0x%jx\n", call_addr + len);
+#endif
+          break;
+        }
+      }
+      return check_entry_validity (callee, path);
+    }
+  }
+
+  return false;
+}
+
+static bool
+check_return_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
+{
+  if (path.empty ())
+    return true;
+
+  std::map <uint64_t, struct cfg_node *>::iterator return_itr;
+  struct cfg_node *caller;
+
+  return_itr = check_node->return_edges.find (path.front ());
+  if (return_itr == check_node->return_edges.end ())
+    return  false;
+
+#ifdef DEBUG
+  printf ("  return: 0x%jx\n", path.front ());
+  printf ("  pop   : 0x%jx\n", call_stack.top ());
+#endif
+
+  /* return addr */
+  if (path.front () != call_stack.top ())
+    return false;
+  path.pop_front ();
+  call_stack.pop ();
+  if (path.empty ())
+    return true;
+  caller = return_itr->second;
+  if (!(caller->entry <= path.front () && path.front () <= caller->exit))
+    return false;
+
+  /* target addr */
+  return check_one_addr_validity (caller, path);
 }
 
 /*******************************************************************

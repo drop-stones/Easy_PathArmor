@@ -132,15 +132,6 @@ instrument_return (INS ins, void *v)
     IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR,
     IARG_END
   );
-/*
-  if (INS_HasFallThrough (ins)) {
-    INS_InsertPredicatedCall (
-      ins, IPOINT_AFTER, (AFUNPTR) return_record,
-      IARG_INST_PTR, IARG_ADDRINT, 0,
-      IARG_END
-    );
-  }
-*/
 }
 
 static void
@@ -212,8 +203,8 @@ print_path ()
 static void
 fini(INT32 code, void *v)
 {
-  path_verification (0, 0);
   //print_path ();
+  path_verification (0, 0);
 }
 
 int

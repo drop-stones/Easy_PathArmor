@@ -16,9 +16,9 @@ cat $TEST01_PATH/test01.c
 echo -e "$ $CFG_PATH/a.out test01 config.map $ENTRY $EXIT cfg.txt\n"
 $CFG_PATH/a.out $TEST01_PATH/test01 $TEST01_PATH/config.map $ENTRY $EXIT $TEST01_PATH/cfg.txt
 
-echo -e "$ $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- test01 0 $ENTRY $EXIT cfg.txt"
+echo -e "\n$ $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- test01 0 $ENTRY $EXIT cfg.txt"
 $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- \
-  $TEST01_PATH/test01 0 0x400746 0x40075e $TEST01_PATH/cfg.txt
+  $TEST01_PATH/test01 0 $ENTRY $EXIT $TEST01_PATH/cfg.txt
 
 echo -e "\n$ $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- test01_attacked 0 $ENTRY $EXIT cfg.txt"
 $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- \
