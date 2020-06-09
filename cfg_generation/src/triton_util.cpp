@@ -56,7 +56,8 @@ get_triton_regnum(const char *regname)
 
 int
 parse_sym_config(const char *fname,
-                 std::map<triton::arch::registers_e, uint64_t> *regs,
+                 //std::map<triton::arch::registers_e, uint64_t> *regs,
+                 std::map<triton::arch::registers_e, std::vector<uint64_t>> *regs_inputs,
                  std::map<uint64_t, uint8_t> *mem,
                  std::vector<triton::arch::registers_e> *symregs,
                  std::vector<uint64_t> *symmem)
@@ -96,8 +97,13 @@ parse_sym_config(const char *fname,
         return -1;
       }
       if(val[0] != '$') {
-        regval = strtoul(val, NULL, 0);
-        (*regs)[triton_reg] = regval;
+        if (val [0] == '0' && val [1] == 'x') {
+          regval = strtoul (val, NULL, 16);
+          (*regs_inputs) [triton_reg].push_back (regval);
+        } else {
+          regval = strtoul(val, NULL, 0);
+          (*regs_inputs) [triton_reg].push_back (regval);
+        }
       } else if(symregs) {
         symregs->push_back(triton_reg);
       }
@@ -106,8 +112,13 @@ parse_sym_config(const char *fname,
       key++;
       addr   = strtoul(key, NULL, 0);
       if(val[0] != '$') {
-        memval = (uint8_t)strtoul(val, NULL, 0);
-        (*mem)[addr] = memval;
+        if (val [0] == '0' && val [1] == 'x') {
+          memval = (uint8_t) strtoul (val, NULL, 16);
+          (*mem) [addr] = memval;
+        } else {
+          memval = (uint8_t)strtoul(val, NULL, 0);
+          (*mem)[addr] = memval;
+        }
       } else if(symmem) {
         symmem->push_back(addr);
       }

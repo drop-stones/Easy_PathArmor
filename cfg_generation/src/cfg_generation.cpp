@@ -1,10 +1,11 @@
 /*
- * Symbolically execute up to and including a given jump instruction, and then compute an input
- * to take the branch direction that wasn't taken previously.
+ * Symbolically execute and create new input to find new path.
+ * And execute repeatedly until there are no new input.
  *
  * Uses Triton's symbolic emulation mode.
  */
 
+#define DEBUG 1
 #include "cfg_generation.hpp"
 
 static int  cfg_generation_config (char *bin_file, char *config_file);
@@ -19,7 +20,7 @@ static void find_new_input (void);
 static Binary bin;
 static triton::API engine;
 static triton::arch::registers_e ip;
-static std::map<triton::arch::registers_e, uint64_t> regs;
+static std::map<triton::arch::registers_e, std::vector<uint64_t>> regs_inputs;
 static std::map<uint64_t, uint8_t> mem;
 static std::vector<triton::arch::registers_e> symregs;
 static std::vector<uint64_t> symmem;
@@ -57,13 +58,13 @@ cfg_generation (char *bin_file, char *config_file, uint64_t entry, uint64_t exit
 }
 
 /* Finalize function
- * This function must be called last.
+ *   This function must be called last.
  */
 int
 cfg_generation_fini (void)
 {
   unload_binary (&bin);
-  //cfg_free ();
+  cfg_free ();
   return 0;
 }
 
@@ -102,16 +103,27 @@ set_triton_arch (void)
 static int
 cfg_generation_config (char *bin_file, char *config_file)
 {
+  std::map <triton::arch::registers_e, uint64_t> regs;
+
   std::string fname (bin_file);
   if(load_binary (fname, &bin, Binary::BIN_TYPE_AUTO) < 0) return -1;
 
   if (set_triton_arch () < 0) return -1;
   engine.enableMode (triton::modes::ALIGNED_MEMORY, true);
 
-  if(parse_sym_config (config_file, &regs, &mem, &symregs, &symmem) < 0) return -1;
-  std::pair<std::map<triton::arch::registers_e, uint64_t>, std::map<uint64_t, uint8_t>> first_input
-    = std::make_pair (regs, mem);
-  add_inputs (first_input);
+  if(parse_sym_config (config_file, &regs_inputs, &mem, &symregs, &symmem) < 0) return -1;
+
+  if (regs_inputs.size () == 0)
+    add_inputs (std::make_pair (regs, mem));
+
+  for (auto regs_input: regs_inputs) {
+    regs.clear ();
+    triton::arch::registers_e regnum = regs_input.first;
+    for (auto regs_concrete_value: regs_input.second) {
+      regs [regnum] = regs_concrete_value;
+      add_inputs (std::make_pair (regs, mem));
+    }
+  }
 
   return 0;
 }
@@ -132,11 +144,9 @@ cfg_generation_reconfig (
   for (auto &kv: new_regs) {
     triton::arch::Register r = engine.getRegister (kv.first);
     engine.setConcreteRegisterValue (r, kv.second);
-
 #ifdef DEBUG
     printf ("  set %lu to %s\n", kv.second, r.getName ().c_str ());
 #endif
-
   }
   for (auto &kv: new_mem) {
     engine.setConcreteMemoryValue (kv.first, kv.second);
@@ -185,11 +195,29 @@ one_emulation (uint64_t start_addr, uint64_t end_addr)
 
     /* skip call to another section */
     if (!strncmp (mnemonic, "call", 4)) {
-      /* To be fixed: For only direct call */
-      uint64_t jump_pc = strtoul (operands, NULL, 0);
-      if (!sec->contains (jump_pc)) {
-        pc = insn.getNextAddress ();
-        continue;
+      uint64_t jump_pc = strtoull (operands, NULL, 0);
+      if (jump_pc != 0) { /* For direct call */
+        if (!sec->contains (jump_pc)) {
+          pc = insn.getNextAddress ();
+#ifdef DEBUG
+  printf ("skip call to 0x%jx\n", jump_pc);
+#endif
+          continue;
+        }
+      } else { /* For indirect call */
+        triton::arch::registers_e regnum = get_triton_regnum (operands);
+        if (regnum != triton::arch::ID_REG_INVALID) {
+          if (regnum == triton::arch::ID_REG_RAX)
+            printf ("This reg is rax.\n");
+          jump_pc = (uint64_t) engine.getConcreteRegisterValue (engine.getRegister (regnum));
+          if (!sec->contains (jump_pc)) {
+            pc = insn.getNextAddress ();
+#ifdef DEBUG
+  printf ("skip call to 0x%jx\n", jump_pc);
+#endif
+            continue;
+          }
+        }
       }
     }
 

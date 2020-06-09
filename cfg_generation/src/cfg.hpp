@@ -11,21 +11,20 @@ struct cfg_node {
   unsigned int id;
   uint64_t entry;
   uint64_t exit;
-  struct cfg_node *true_edge;
+  //struct cfg_node *true_edge;
+  std::set <struct cfg_node *> true_edges;
   struct cfg_node *false_edge;
-  //std::vector <std::pair <uint64_t, struct cfg_node *> > call_edges;
-  //std::vector <std::pair <uint64_t, struct cfg_node *> > return_edges;
   std::map <uint64_t, std::set <struct cfg_node *> > call_edges;
   std::map <uint64_t, struct cfg_node *> return_edges;
   struct cfg_node *latest_return_edge;
 
-  cfg_node () : id (0), entry (0), exit (0), true_edge (NULL), false_edge (NULL) {}
+  cfg_node () : id (0), entry (0), exit (0), false_edge (NULL) {}
   cfg_node (unsigned int id, uint64_t entry)
   {
     this->id                 = id;
     this->entry              = entry;
     this->exit               = 0;
-    this->true_edge          = NULL;
+    //this->true_edge          = NULL;
     this->false_edge         = NULL;
     this->latest_return_edge = NULL;
   }
@@ -34,7 +33,7 @@ struct cfg_node {
     this->id                 = id;
     this->entry              = entry;
     this->exit               = exit;
-    this->true_edge          = NULL;
+    //this->true_edge          = NULL;
     this->false_edge         = NULL;
     this->latest_return_edge = NULL;
   }

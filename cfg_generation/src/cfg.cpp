@@ -1,7 +1,6 @@
 #include <stack>
 #include "cfg.hpp"
 
-#define DEBUG 1
 #define  BUF_SIZE 20
 
 static struct cfg_node *root;
@@ -13,19 +12,18 @@ static std::set <struct cfg_node *> searched_set;
 static std::stack <uint64_t> call_stack;
 
 
-static void cfg_save_node (std::ofstream &ofs, struct cfg_node *node);
-static struct cfg_node *cfg_load_node (std::ifstream &ifs);
-static void cfg_free_node (struct cfg_node *subroot_node);
 static struct cfg_node *cfg_find_node (unsigned int id, struct cfg_node *node);
 static struct cfg_node *cfg_find_node (uint64_t addr, struct cfg_node *node);
 static struct cfg_node *cfg_find (unsigned int id);
 static struct cfg_node *cfg_find (uint64_t addr);
-
+static void cfg_free_node (struct cfg_node *subroot_node);
 static bool check_one_addr_validity (struct cfg_node *check_node, std::deque <uint64_t> path);
 static bool check_entry_validity    (struct cfg_node *check_node, std::deque <uint64_t> path);
 static bool check_exit_validity     (struct cfg_node *check_node, std::deque <uint64_t> path);
 static bool check_call_validity     (struct cfg_node *check_node, std::deque <uint64_t> path);
 static bool check_return_validity   (struct cfg_node *check_node, std::deque <uint64_t> path);
+static void cfg_save_node (std::ofstream &ofs, struct cfg_node *node);
+static struct cfg_node *cfg_load_node (std::ifstream &ifs);
 
 /*******************************************************************
  *                       public function                           *
@@ -69,7 +67,8 @@ cfg_divide_node (struct cfg_node *node, uint64_t entry)
 
   /* lower setting */
   lower->exit       = upper->exit;
-  lower->true_edge  = upper->true_edge;
+  //lower->true_edge  = upper->true_edge;
+  lower->true_edges = upper->true_edges;
   lower->false_edge = upper->false_edge;
   /* call/return edges process */
   for (call_itr = upper->call_edges.begin (); call_itr != upper->call_edges.end (); call_itr++) {
@@ -90,7 +89,7 @@ cfg_divide_node (struct cfg_node *node, uint64_t entry)
   lower->latest_return_edge = upper->latest_return_edge;
   /*** Fault: Cannot get correct exit address ***/
   upper->exit       = entry-1;
-  upper->true_edge  = NULL;
+  upper->true_edges.clear ();
   upper->false_edge = lower;
 
   return lower;
@@ -126,7 +125,8 @@ cfg_jmp_process (uint64_t entry, struct cfg_node *parent_node, bool condition)
 #endif
 
   if (condition)
-    parent_node->true_edge  = new_node;
+    //parent_node->true_edge  = new_node;
+    parent_node->true_edges.insert (new_node);
   else
     parent_node->false_edge = new_node;
 
@@ -192,7 +192,7 @@ cfg_check_validity (std::deque <uint64_t> path)
   return check_one_addr_validity (check_node, path);
 }
 
-/* save CFG in cfg_file */
+/* save CFG to cfg_file */
 void
 cfg_save (const char *cfg_file)
 {
@@ -227,7 +227,7 @@ static struct cfg_node *
 cfg_find_call_edges (unsigned int id, struct cfg_node *caller)
 {
   std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
-  std::set <struct cfg_node *>::iterator callee_itr;
+  std::set <struct cfg_node *>::iterator callee_itr, edge_itr;
   std::set <struct cfg_node *> callee_set;
   struct cfg_node *callee, *true_edge, *false_edge;
   if (caller == NULL) return NULL;
@@ -240,8 +240,12 @@ cfg_find_call_edges (unsigned int id, struct cfg_node *caller)
       searched_set.insert (callee);
       if (callee->id == id)
         return callee;
-      if ((true_edge  = cfg_find_node (id, callee->true_edge))  != NULL)
-        return true_edge;
+      //if ((true_edge  = cfg_find_node (id, callee->true_edge))  != NULL)
+      //  return true_edge;
+      for (edge_itr = callee->true_edges.begin (); edge_itr != callee->true_edges.end (); edge_itr++) {
+        if ((true_edge = cfg_find_node (id, *edge_itr)) != NULL)
+          return true_edge;
+      }
       if ((false_edge = cfg_find_node (id, callee->false_edge)) != NULL)
         return false_edge;
       if ((callee = cfg_find_call_edges (id, callee)) != NULL)
@@ -256,7 +260,7 @@ static struct cfg_node *
 cfg_find_call_edges (uint64_t addr, struct cfg_node *caller)
 {
   std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
-  std::set <struct cfg_node *>::iterator callee_itr;
+  std::set <struct cfg_node *>::iterator callee_itr, edge_itr;
   std::set <struct cfg_node *> callee_set;
   struct cfg_node *callee, *true_edge, *false_edge;
   if (caller == NULL) return NULL;
@@ -269,8 +273,12 @@ cfg_find_call_edges (uint64_t addr, struct cfg_node *caller)
       searched_set.insert (callee);
       if (callee->entry <= addr && addr <= callee->exit)
         return callee;
-      if ((true_edge  = cfg_find_node (addr, callee->true_edge))  != NULL)
-        return true_edge;
+      //if ((true_edge  = cfg_find_node (addr, callee->true_edge))  != NULL)
+      //  return true_edge;
+      for (edge_itr = callee->true_edges.begin (); edge_itr != callee->true_edges.end (); edge_itr++) {
+        if ((true_edge = cfg_find_node (addr, *edge_itr)) != NULL)
+          return true_edge;
+      }
       if ((false_edge = cfg_find_node (addr, callee->false_edge)) != NULL)
         return false_edge;
       if ((callee = cfg_find_call_edges (addr, callee)) != NULL)
@@ -285,6 +293,7 @@ static struct cfg_node *
 cfg_find_node (unsigned int id, struct cfg_node *node)
 {
   struct cfg_node *callee, *true_edge, *false_edge;
+  std::set <struct cfg_node *>::iterator edge_itr;
   if (node == NULL)
     return NULL;
   if (searched_set.find (node) != searched_set.end ())
@@ -294,8 +303,12 @@ cfg_find_node (unsigned int id, struct cfg_node *node)
     return node;
   if ((callee = cfg_find_call_edges (id, node)) != NULL)
     return callee;
-  if ((true_edge  = cfg_find_node (id, node->true_edge))  != NULL)
-    return true_edge;
+  //if ((true_edge  = cfg_find_node (id, node->true_edge))  != NULL)
+  //  return true_edge;
+  for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++) {
+    if ((true_edge = cfg_find_node (id, *edge_itr)) != NULL)
+      return true_edge;
+  }
   if ((false_edge = cfg_find_node (id, node->false_edge)) != NULL)
     return false_edge;
   return NULL;
@@ -306,6 +319,7 @@ static struct cfg_node *
 cfg_find_node (uint64_t addr, struct cfg_node *node)
 {
   struct cfg_node *callee, *true_edge, *false_edge;
+  std::set <struct cfg_node *>::iterator edge_itr;
   if (node == NULL)
     return NULL;
   if (searched_set.find (node) != searched_set.end ())
@@ -315,13 +329,20 @@ cfg_find_node (uint64_t addr, struct cfg_node *node)
     return node;
   if ((callee = cfg_find_call_edges (addr, node)) != NULL)
     return callee;
-  if ((true_edge  = cfg_find_node (addr, node->true_edge))  != NULL)
-    return true_edge;
+  //if ((true_edge  = cfg_find_node (addr, node->true_edge))  != NULL)
+  //  return true_edge;
+  for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++) {
+    if ((true_edge = cfg_find_node (addr, *edge_itr)) != NULL)
+      return true_edge;
+  }
   if ((false_edge = cfg_find_node (addr, node->false_edge)) != NULL)
     return false_edge;
   return NULL;
 }
 
+/* wrapper function to find cfg_node by id.
+ * Please use it to find cfg_node.
+ */
 static struct cfg_node *
 cfg_find (unsigned int id)
 {
@@ -329,6 +350,9 @@ cfg_find (unsigned int id)
   return cfg_find_node (id, root);
 }
 
+/* wrapper function to find cfg_node by addr.
+ * Please use it to find cfg_node.
+ */
 static struct cfg_node *
 cfg_find (uint64_t addr)
 {
@@ -340,16 +364,20 @@ cfg_find (uint64_t addr)
  *                        free function                            *
  *******************************************************************/
 
+/* free all cfg_node recursively */
 static void
 cfg_free_node (struct cfg_node *node)
 {
+  std::set <struct cfg_node *>::iterator edge_itr;
   if (node == NULL)
     return;
   if (searched_set.find (node) != searched_set.end ())
     return;
   searched_set.insert (node);
 
-  cfg_free_node (node->true_edge);
+  //cfg_free_node (node->true_edge);
+  for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++)
+    cfg_free_node (*edge_itr);
   cfg_free_node (node->false_edge);
   node->call_edges.clear ();
   node->return_edges.clear ();
@@ -377,9 +405,10 @@ cfg_save_node (std::ofstream &ofs, struct cfg_node *node)
 {
   /* ID: meta data to identify the node (1 origin) */
   static unsigned int ID = 1;
-  unsigned int call_addr_count, return_count;
+  unsigned int true_edge_count, call_addr_count, return_count;
   uint64_t call_addr, return_addr;
   struct cfg_node *return_edge;
+  std::set <struct cfg_node *>::iterator edge_itr;
   std::set <struct cfg_node *> callee_set;
   std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
   std::set <struct cfg_node *>::iterator callee_itr;
@@ -401,7 +430,12 @@ cfg_save_node (std::ofstream &ofs, struct cfg_node *node)
   ofs << node->id << " ";
   ofs << node->entry << " ";
   ofs << node->exit << " ";
-  cfg_save_node (ofs, node->true_edge);
+  //cfg_save_node (ofs, node->true_edge);
+  true_edge_count = node->true_edges.size ();
+  ofs << true_edge_count << " ";
+  for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++) {
+    cfg_save_node (ofs, *edge_itr);
+  }
   cfg_save_node (ofs, node->false_edge);
 
   call_addr_count = node->call_edges.size ();
@@ -478,7 +512,7 @@ in_load_map (unsigned int ID)
 static struct cfg_node *
 cfg_load_node (std::ifstream &ifs)
 {
-  unsigned int ID, call_addr_count, call_count, return_count, i, j;
+  unsigned int ID, true_edge_count, call_addr_count, call_count, return_count, i, j;
   uint64_t call_addr, return_addr;
   struct cfg_node *node;
 
@@ -492,7 +526,11 @@ cfg_load_node (std::ifstream &ifs)
   node = parse_node (ifs);
   load_map [ID] = node;
 
-  node->true_edge  = cfg_load_node (ifs);
+  //node->true_edge  = cfg_load_node (ifs);
+  true_edge_count  = parse_uint (ifs);
+  for (i = 0; i < true_edge_count; i++) {
+    node->true_edges.insert (cfg_load_node (ifs));
+  }
   node->false_edge = cfg_load_node (ifs);
 
   call_addr_count = parse_uint (ifs);
@@ -515,6 +553,11 @@ cfg_load_node (std::ifstream &ifs)
 /*******************************************************************
  *                    verification function                        *
  *******************************************************************/
+
+/* check whether the next addr is valid or not.
+ * If so, call a next verification function.
+ * If not so, return false.
+ */
 static bool
 check_one_addr_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
 {
@@ -532,6 +575,11 @@ check_one_addr_validity (struct cfg_node *check_node, std::deque <uint64_t> path
   return false;
 }
 
+/* check whether the next addr is entry addr or not.
+ * If so, check whether the addr is call_addr or not.
+ *   If the addr is call_addr, call check_call_validity ().
+ *   If not, pop and call a next verification function.
+ */
 static bool
 check_entry_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
 {
@@ -558,9 +606,14 @@ check_entry_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   }
 }
 
+/* check whether the next addr is exit addr or not.
+ * If so, pop and call a next verification function.
+ * If not, return false
+ */
 static bool
 check_exit_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
 {
+  std::set <struct cfg_node *>::iterator edge_itr;
   if (path.empty ())
     return true;
   if (check_node->exit != path.front ())
@@ -573,8 +626,12 @@ check_exit_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   path.pop_front ();
   if (path.empty ())
     return true;
-  if (check_node->true_edge  != NULL && check_node->true_edge->entry == path.front ())
-    return check_entry_validity (check_node->true_edge, path);
+  //if (check_node->true_edge  != NULL && check_node->true_edge->entry == path.front ())
+  //  return check_entry_validity (check_node->true_edge, path);
+  for (edge_itr = check_node->true_edges.begin (); edge_itr != check_node->true_edges.end (); edge_itr++) {
+    if ((*edge_itr)->entry == path.front ())
+      return check_entry_validity (*edge_itr, path);
+  }
   if (check_node->false_edge != NULL && check_node->false_edge->entry == path.front ())
     return check_entry_validity (check_node->false_edge, path);
   if (check_node->exit == path.front ())
@@ -587,6 +644,10 @@ check_exit_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   return false;
 }
 
+/* check whether the next addr is call addr or not.
+ * If so, push the addr to stack and call check_entry_validity ().
+ * If not, return false.
+ */
 static bool
 check_call_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
 {
@@ -632,6 +693,10 @@ check_call_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   return false;
 }
 
+/* check whether the next addr is return addr or not.
+ * If so, check call/return matching and call a next verification function.
+ * If not, return false.
+ */
 static bool
 check_return_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
 {
@@ -650,8 +715,7 @@ check_return_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   printf ("  pop   : 0x%jx\n", call_stack.top ());
 #endif
 
-  /* return addr */
-  if (path.front () != call_stack.top ())
+  if (path.front () != call_stack.top ()) /* call/return matching */
     return false;
   path.pop_front ();
   call_stack.pop ();
@@ -661,7 +725,6 @@ check_return_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   if (!(caller->entry <= path.front () && path.front () <= caller->exit))
     return false;
 
-  /* target addr */
   return check_one_addr_validity (caller, path);
 }
 
@@ -674,6 +737,7 @@ cfg_print_node (void)
 {
   unsigned int i;
   struct cfg_node *cfg_node_i;
+  std::set <struct cfg_node *>::iterator edge_itr;
   std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
   std::set <struct cfg_node *>::iterator callee_itr;
   std::map <uint64_t, struct cfg_node *>::iterator return_itr;
@@ -683,10 +747,14 @@ cfg_print_node (void)
     if (cfg_node_i == NULL)
       continue;
     printf ("BB%02u: 0x%jx - 0x%jx, ", cfg_node_i->id, cfg_node_i->entry, cfg_node_i->exit);
-    if (cfg_node_i->true_edge != NULL)
-      printf ("true(BB%02u) ", cfg_node_i->true_edge->id);
-    else
-      printf ("true(NULL) ");
+    //if (cfg_node_i->true_edge != NULL)
+    //  printf ("true(BB%02u) ", cfg_node_i->true_edge->id);
+    //else
+    //  printf ("true(NULL) ");
+    printf ("true(");
+    for (edge_itr = cfg_node_i->true_edges.begin (); edge_itr != cfg_node_i->true_edges.end (); edge_itr++)
+      printf ("BB%02u,", (*edge_itr)->id);
+    printf (") ");
     if (cfg_node_i->false_edge != NULL)
       printf ("false(BB%02u) ", cfg_node_i->false_edge->id);
     else
@@ -706,6 +774,7 @@ cfg_print_node (void)
 static void
 cfg_print_tree (struct cfg_node *subroot, unsigned int depth, bool cond)
 {
+  std::set <struct cfg_node *>::iterator edge_itr;
   if (subroot == NULL)
     return;
   if (searched_set.find (subroot) != searched_set.end ())
@@ -720,7 +789,9 @@ cfg_print_tree (struct cfg_node *subroot, unsigned int depth, bool cond)
 
   printf ("BB%02u -> ", subroot->id);
   cfg_print_tree (subroot->false_edge, depth+1, false);
-  cfg_print_tree (subroot->true_edge,  depth+1, true);
+  for (edge_itr = subroot->true_edges.begin (); edge_itr != subroot->true_edges.end (); edge_itr++)
+    cfg_print_tree (*edge_itr, depth+1, true);
+  //cfg_print_tree (subroot->true_edge,  depth+1, true);
 }
 
 static void
@@ -761,6 +832,7 @@ cfg_print_call_edges (struct cfg_node *caller, unsigned int depth)
 static void
 cfg_print_call_tree (struct cfg_node *subroot)
 {
+  std::set <struct cfg_node *>::iterator edge_itr;
   if (subroot == NULL)
     return;
   if (searched_set.find (subroot) != searched_set.end ())
@@ -769,7 +841,9 @@ cfg_print_call_tree (struct cfg_node *subroot)
 
   cfg_print_call_edges (subroot, 0);
   cfg_print_call_tree (subroot->false_edge);
-  cfg_print_call_tree (subroot->true_edge);
+  //cfg_print_call_tree (subroot->true_edge);
+  for (edge_itr = subroot->true_edges.begin (); edge_itr != subroot->true_edges.end (); edge_itr++)
+    cfg_print_call_tree (*edge_itr);
 }
 
 void

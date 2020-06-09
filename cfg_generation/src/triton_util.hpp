@@ -12,7 +12,8 @@ triton::arch::registers_e get_triton_regnum(const char *regname);
 
 int parse_sym_config(
   const char *fname, 
-  std::map<triton::arch::registers_e, uint64_t> *regs, 
+  //std::map<triton::arch::registers_e, uint64_t> *regs, 
+  std::map<triton::arch::registers_e, std::vector<uint64_t>> *regs_inputs, 
   std::map<uint64_t, uint8_t> *mem,
   std::vector<triton::arch::registers_e> *symregs = NULL,
   std::vector<uint64_t> *symmem = NULL
