@@ -22,7 +22,6 @@ PathArmor$ make
     * ベーシックブロックの分割に対応
   * kernel module with Pin
   * Path Verification
-  * direct jump, direct call/return Verification
+  * direct jump, direct call/return, indirect jump Verification
 * To do
-  * indirect jump Verification
   * indirect call Verification
