@@ -26,8 +26,9 @@
   * call: map <addr, set <cfg_node> >に変更
   * return: map <addr, cfg_node>に変更
 * call edge/return edgeの同じ要素追加への対処 (for, whileなど)
+* true\_edgeを set <cfg\_node> へ変更 (indirect edgeのとき、複数の飛び先が考えられるため)
+* direct edge/return/indirect jump Verification
 
 ## To do
 
-* true\_edgeを set <cfg\_node> へ変更 (indirect edgeのとき、複数の飛び先が考えられるため)
-* Path Verificationの実装
+* indirect call Verification
