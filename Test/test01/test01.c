@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 void B (void); void D (void); void E (void);
 

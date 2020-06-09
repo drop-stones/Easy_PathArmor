@@ -6,10 +6,10 @@ KERNEL_MODULE_OBJ=$PATH_ARMOR/kernel_module/obj
 CFG_PATH=$PATH_ARMOR/cfg_generation
 TEST_PATH=$PATH_ARMOR/Test
 
-NAME=test01
+NAME=test02
 WD=$TEST_PATH/$NAME
-ENTRY=0x40065b
-EXIT=0x400673
+ENTRY=0x400698
+EXIT=0x4006b0
 
 echo -e "$ cat $NAME.c\n"
 cat $WD/$NAME.c
