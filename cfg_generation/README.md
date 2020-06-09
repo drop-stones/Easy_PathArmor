@@ -29,5 +29,5 @@
 
 ## To do
 
-
+* true\_edgeを set <cfg\_node> へ変更 (indirect edgeのとき、複数の飛び先が考えられるため)
 * Path Verificationの実装
