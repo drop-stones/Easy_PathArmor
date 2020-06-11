@@ -1,12 +1,13 @@
-	.file	"test02.c"
+	.file	"test04.c"
 	.intel_syntax noprefix
+	.comm	fp,8,8
 	.section	.rodata
 .LC0:
-	.string	"func0"
+	.string	"A->"
 	.text
-	.globl	func0
-	.type	func0, @function
-func0:
+	.globl	A
+	.type	A, @function
+A:
 .LFB2:
 	.cfi_startproc
 	push	rbp
@@ -14,22 +15,27 @@ func0:
 	.cfi_offset 6, -16
 	mov	rbp, rsp
 	.cfi_def_cfa_register 6
+	mov	QWORD PTR fp[rip], OFFSET FLAT:B
 	mov	edi, OFFSET FLAT:.LC0
-	call	puts
+	mov	eax, 0
+	call	printf
+	mov	rdx, QWORD PTR fp[rip]
+	mov	eax, 0
+	call	rdx
 	nop
 	pop	rbp
 	.cfi_def_cfa 7, 8
 	ret
 	.cfi_endproc
 .LFE2:
-	.size	func0, .-func0
+	.size	A, .-A
 	.section	.rodata
 .LC1:
-	.string	"func1"
+	.string	"C->"
 	.text
-	.globl	func1
-	.type	func1, @function
-func1:
+	.globl	C
+	.type	C, @function
+C:
 .LFB3:
 	.cfi_startproc
 	push	rbp
@@ -37,22 +43,27 @@ func1:
 	.cfi_offset 6, -16
 	mov	rbp, rsp
 	.cfi_def_cfa_register 6
+	mov	QWORD PTR fp[rip], OFFSET FLAT:D
 	mov	edi, OFFSET FLAT:.LC1
-	call	puts
+	mov	eax, 0
+	call	printf
+	mov	rdx, QWORD PTR fp[rip]
+	mov	eax, 0
+	call	rdx
 	nop
 	pop	rbp
 	.cfi_def_cfa 7, 8
 	ret
 	.cfi_endproc
 .LFE3:
-	.size	func1, .-func1
+	.size	C, .-C
 	.section	.rodata
 .LC2:
-	.string	"func2"
+	.string	"B->"
 	.text
-	.globl	func2
-	.type	func2, @function
-func2:
+	.globl	B
+	.type	B, @function
+B:
 .LFB4:
 	.cfi_startproc
 	push	rbp
@@ -60,22 +71,27 @@ func2:
 	.cfi_offset 6, -16
 	mov	rbp, rsp
 	.cfi_def_cfa_register 6
+	mov	QWORD PTR fp[rip], OFFSET FLAT:E
 	mov	edi, OFFSET FLAT:.LC2
-	call	puts
+	mov	eax, 0
+	call	printf
+	mov	rdx, QWORD PTR fp[rip]
+	mov	eax, 0
+	call	rdx
 	nop
 	pop	rbp
 	.cfi_def_cfa 7, 8
 	ret
 	.cfi_endproc
 .LFE4:
-	.size	func2, .-func2
+	.size	B, .-B
 	.section	.rodata
 .LC3:
-	.string	"func3 (can't call)"
+	.string	"D->"
 	.text
-	.globl	func3
-	.type	func3, @function
-func3:
+	.globl	D
+	.type	D, @function
+D:
 .LFB5:
 	.cfi_startproc
 	push	rbp
@@ -83,30 +99,47 @@ func3:
 	.cfi_offset 6, -16
 	mov	rbp, rsp
 	.cfi_def_cfa_register 6
+	mov	QWORD PTR fp[rip], OFFSET FLAT:E
 	mov	edi, OFFSET FLAT:.LC3
-	call	puts
+	mov	eax, 0
+	call	printf
+	mov	rdx, QWORD PTR fp[rip]
+	mov	eax, 0
+	call	rdx
 	nop
 	pop	rbp
 	.cfi_def_cfa 7, 8
 	ret
 	.cfi_endproc
 .LFE5:
-	.size	func3, .-func3
-	.globl	func
-	.data
-	.align 32
-	.type	func, @object
-	.size	func, 32
-func:
-	.quad	func0
-	.quad	func1
-	.quad	func2
-	.quad	func3
+	.size	D, .-D
+	.section	.rodata
+.LC4:
+	.string	"E"
 	.text
+	.globl	E
+	.type	E, @function
+E:
+.LFB6:
+	.cfi_startproc
+	push	rbp
+	.cfi_def_cfa_offset 16
+	.cfi_offset 6, -16
+	mov	rbp, rsp
+	.cfi_def_cfa_register 6
+	mov	edi, OFFSET FLAT:.LC4
+	call	puts
+	nop
+	pop	rbp
+	.cfi_def_cfa 7, 8
+	ret
+	.cfi_endproc
+.LFE6:
+	.size	E, .-E
 	.globl	main
 	.type	main, @function
 main:
-.LFB6:
+.LFB7:
 	.cfi_startproc
 	push	rbp
 	.cfi_def_cfa_offset 16
@@ -122,34 +155,23 @@ main:
 	mov	rdi, rax
 	call	atoi
 	mov	DWORD PTR [rbp-4], eax
-	mov	ecx, DWORD PTR [rbp-4]
-	mov	edx, 1431655766
-	mov	eax, ecx
-	imul	edx
-	mov	eax, ecx
-	sar	eax, 31
-	sub	edx, eax
-	mov	eax, edx
-	add	eax, eax
-	add	eax, edx
-	sub	ecx, eax
-	mov	edx, ecx
-	movsx	rax, edx
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	mov	rax, QWORD PTR func[0+rax*8]
-	call	rax
+	mov	eax, DWORD PTR [rbp-4]
+	and	eax, 1
+	test	eax, eax
+	jne	.L7
+	mov	eax, 0
+	call	A
+	jmp	.L8
+.L7:
+	mov	eax, 0
+	call	C
+.L8:
 	mov	eax, 0
 	leave
 	.cfi_def_cfa 7, 8
 	ret
 	.cfi_endproc
-.LFE6:
+.LFE7:
 	.size	main, .-main
 	.ident	"GCC: (Ubuntu 5.4.0-6ubuntu1~16.04.5) 5.4.0 20160609"
 	.section	.note.GNU-stack,"",@progbits

@@ -1,16 +1,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void func0 (void) { puts ("func0"); }
-void func1 (void) { puts ("func1"); }
-void func2 (void) { puts ("func2"); }
-void func3 (void) { puts ("func3 (can't call)"); }
+void (*fp) ();
 
-void (* func [4]) (void) = { func0, func1, func2, func3 };
+void B (void); void D (void); void E (void);
+
+void A () { fp = B; printf ("A->"); (*fp) (); }  void C () { fp = D; printf ("C->"); (*fp) (); }
+void B () { fp = E; printf ("B->"); (*fp) (); }  void D () { fp = E; printf ("D->"); (*fp) (); }
+void E () { printf ("E\n"); }
 
 int
-main (int argc, char * argv [])
+main (int argc, char *argv [])
 {
-  int index = atoi (argv [1]);
-  func [index % 3] ();
+  int x = atoi (argv [1]);
+  if ((x % 2) == 0)
+    A ();
+  else
+    C ();
 }

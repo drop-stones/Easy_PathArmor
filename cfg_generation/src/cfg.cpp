@@ -67,7 +67,6 @@ cfg_divide_node (struct cfg_node *node, uint64_t entry)
 
   /* lower setting */
   lower->exit       = upper->exit;
-  //lower->true_edge  = upper->true_edge;
   lower->true_edges = upper->true_edges;
   lower->false_edge = upper->false_edge;
   /* call/return edges process */
@@ -125,7 +124,6 @@ cfg_jmp_process (uint64_t entry, struct cfg_node *parent_node, bool condition)
 #endif
 
   if (condition)
-    //parent_node->true_edge  = new_node;
     parent_node->true_edges.insert (new_node);
   else
     parent_node->false_edge = new_node;
@@ -240,8 +238,6 @@ cfg_find_call_edges (unsigned int id, struct cfg_node *caller)
       searched_set.insert (callee);
       if (callee->id == id)
         return callee;
-      //if ((true_edge  = cfg_find_node (id, callee->true_edge))  != NULL)
-      //  return true_edge;
       for (edge_itr = callee->true_edges.begin (); edge_itr != callee->true_edges.end (); edge_itr++) {
         if ((true_edge = cfg_find_node (id, *edge_itr)) != NULL)
           return true_edge;
@@ -273,12 +269,9 @@ cfg_find_call_edges (uint64_t addr, struct cfg_node *caller)
       searched_set.insert (callee);
       if (callee->entry <= addr && addr <= callee->exit)
         return callee;
-      //if ((true_edge  = cfg_find_node (addr, callee->true_edge))  != NULL)
-      //  return true_edge;
-      for (edge_itr = callee->true_edges.begin (); edge_itr != callee->true_edges.end (); edge_itr++) {
+      for (edge_itr = callee->true_edges.begin (); edge_itr != callee->true_edges.end (); edge_itr++)
         if ((true_edge = cfg_find_node (addr, *edge_itr)) != NULL)
           return true_edge;
-      }
       if ((false_edge = cfg_find_node (addr, callee->false_edge)) != NULL)
         return false_edge;
       if ((callee = cfg_find_call_edges (addr, callee)) != NULL)
@@ -303,8 +296,6 @@ cfg_find_node (unsigned int id, struct cfg_node *node)
     return node;
   if ((callee = cfg_find_call_edges (id, node)) != NULL)
     return callee;
-  //if ((true_edge  = cfg_find_node (id, node->true_edge))  != NULL)
-  //  return true_edge;
   for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++) {
     if ((true_edge = cfg_find_node (id, *edge_itr)) != NULL)
       return true_edge;
@@ -329,12 +320,9 @@ cfg_find_node (uint64_t addr, struct cfg_node *node)
     return node;
   if ((callee = cfg_find_call_edges (addr, node)) != NULL)
     return callee;
-  //if ((true_edge  = cfg_find_node (addr, node->true_edge))  != NULL)
-  //  return true_edge;
-  for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++) {
+  for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++)
     if ((true_edge = cfg_find_node (addr, *edge_itr)) != NULL)
       return true_edge;
-  }
   if ((false_edge = cfg_find_node (addr, node->false_edge)) != NULL)
     return false_edge;
   return NULL;
@@ -375,7 +363,6 @@ cfg_free_node (struct cfg_node *node)
     return;
   searched_set.insert (node);
 
-  //cfg_free_node (node->true_edge);
   for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++)
     cfg_free_node (*edge_itr);
   cfg_free_node (node->false_edge);
@@ -430,12 +417,10 @@ cfg_save_node (std::ofstream &ofs, struct cfg_node *node)
   ofs << node->id << " ";
   ofs << node->entry << " ";
   ofs << node->exit << " ";
-  //cfg_save_node (ofs, node->true_edge);
   true_edge_count = node->true_edges.size ();
   ofs << true_edge_count << " ";
-  for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++) {
+  for (edge_itr = node->true_edges.begin (); edge_itr != node->true_edges.end (); edge_itr++)
     cfg_save_node (ofs, *edge_itr);
-  }
   cfg_save_node (ofs, node->false_edge);
 
   call_addr_count = node->call_edges.size ();
@@ -445,9 +430,8 @@ cfg_save_node (std::ofstream &ofs, struct cfg_node *node)
     callee_set = call_itr->second;
     ofs << call_addr << " ";
     ofs << callee_set.size () << " ";
-    for (callee_itr = callee_set.begin (); callee_itr != callee_set.end (); callee_itr++) { 
+    for (callee_itr = callee_set.begin (); callee_itr != callee_set.end (); callee_itr++)
       cfg_save_node (ofs, *callee_itr);
-    }
   }
 
   return_count = node->return_edges.size ();
@@ -526,7 +510,6 @@ cfg_load_node (std::ifstream &ifs)
   node = parse_node (ifs);
   load_map [ID] = node;
 
-  //node->true_edge  = cfg_load_node (ifs);
   true_edge_count  = parse_uint (ifs);
   for (i = 0; i < true_edge_count; i++) {
     node->true_edges.insert (cfg_load_node (ifs));
@@ -626,12 +609,9 @@ check_exit_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   path.pop_front ();
   if (path.empty ())
     return true;
-  //if (check_node->true_edge  != NULL && check_node->true_edge->entry == path.front ())
-  //  return check_entry_validity (check_node->true_edge, path);
-  for (edge_itr = check_node->true_edges.begin (); edge_itr != check_node->true_edges.end (); edge_itr++) {
+  for (edge_itr = check_node->true_edges.begin (); edge_itr != check_node->true_edges.end (); edge_itr++)
     if ((*edge_itr)->entry == path.front ())
       return check_entry_validity (*edge_itr, path);
-  }
   if (check_node->false_edge != NULL && check_node->false_edge->entry == path.front ())
     return check_entry_validity (check_node->false_edge, path);
   if (check_node->exit == path.front ())

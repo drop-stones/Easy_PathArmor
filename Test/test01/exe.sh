@@ -21,6 +21,10 @@ echo -e "\n$ $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- $NAME 0 $EN
 $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- \
   $WD/$NAME 0 $ENTRY $EXIT $WD/cfg.txt
 
+echo -e "\n$ $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- $NAME 1 $ENTRY $EXIT cfg.txt"
+$PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- \
+  $WD/$NAME 1 $ENTRY $EXIT $WD/cfg.txt
+
 echo -e "\n$ $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- ${NAME}_attacked 0 $ENTRY $EXIT cfg.txt"
 $PIN_ROOT/pin -t $KERNEL_MODULE_OBJ/kernel_module.so -- \
   $WD/${NAME}_attacked 0 $ENTRY $EXIT $WD/cfg.txt

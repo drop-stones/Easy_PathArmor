@@ -5,7 +5,6 @@
  * Uses Triton's symbolic emulation mode.
  */
 
-#define DEBUG 1
 #include "cfg_generation.hpp"
 
 static int  cfg_generation_config (char *bin_file, char *config_file);
