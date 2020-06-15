@@ -109,6 +109,8 @@ D:
 	call	printf
 	nop
 	pop	rbp
+	pop	rax	# pop return addr to A node
+	push	0x40061d
 	.cfi_def_cfa 7, 8
 	ret
 	.cfi_endproc
@@ -133,7 +135,9 @@ E:
 	call	printf
 	nop
 	pop	rbp
-	pop	rax     # pop return addr to correct node
+	pop	rax       # pop return addr to B node
+	#pop	rax	  # pop return addr to A node
+	#push	0x400627  # push return addr to C
 	push	0x400642  # push return addr to D
 	.cfi_def_cfa 7, 8
 	ret

@@ -16,5 +16,6 @@ main (int argc, char *argv [])
   cfg_generation_init ();
   cfg_generation (argv [1], argv [2], entry, exit);
   cfg_save (argv [5]);
+  cfg_print ();
   cfg_generation_fini ();
 }

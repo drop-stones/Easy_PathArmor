@@ -614,14 +614,54 @@ check_exit_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
       return check_entry_validity (*edge_itr, path);
   if (check_node->false_edge != NULL && check_node->false_edge->entry == path.front ())
     return check_entry_validity (check_node->false_edge, path);
-  if (check_node->exit == path.front ())
-    return check_exit_validity (check_node, path);
-  if (check_node->call_edges.find (path.front ()) != check_node->call_edges.end ())
-    return check_call_validity (check_node, path);
+  //if (check_node->exit == path.front ())
+  //  return check_exit_validity (check_node, path);
+  //if (check_node->call_edges.find (path.front ()) != check_node->call_edges.end ())
+  //  return check_call_validity (check_node, path);
   if (check_node->return_edges.find (path.front ()) != check_node->return_edges.end ())
     return check_return_validity (check_node, path);
 
   return false;
+}
+
+static bool
+is_in_call_edges (struct cfg_node *check_node, uint64_t call_addr)
+{
+  std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
+  call_itr = check_node->call_edges.find (call_addr);
+  if (call_itr != check_node->call_edges.end ())
+    return true;
+  else
+    return false;
+}
+
+static struct cfg_node *
+get_callee (struct cfg_node *check_node, uint64_t call_addr, uint64_t entry)
+{
+  std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
+  std::set <struct cfg_node *>::iterator callee_itr;
+  std::set <struct cfg_node *> callee_set;
+  struct cfg_node *callee;
+
+  call_itr = check_node->call_edges.find (call_addr);
+  callee_set = call_itr->second;
+  for (callee_itr = callee_set.begin (); callee_itr != callee_set.end (); callee_itr++) {
+    callee = *callee_itr;
+    if (callee->entry == entry)
+      return callee;
+  }
+  return NULL;
+}
+
+static uint64_t
+get_return_addr (struct cfg_node *callee, uint64_t call_addr)
+{
+  unsigned int len;
+  for (len = 2; len <= 5; len++) {
+    if (callee->return_edges.find (call_addr + len) != callee->return_edges.end ())
+      return call_addr + len;
+  }
+  return 0;
 }
 
 /* check whether the next addr is call addr or not.
@@ -634,15 +674,10 @@ check_call_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   if (path.empty ())
     return true;
 
-  std::map <uint64_t, std::set <struct cfg_node *> >::iterator call_itr;
-  std::set <struct cfg_node *>::iterator callee_itr;
-  std::set <struct cfg_node *> callee_set;
   struct cfg_node *callee;
   uint64_t call_addr;
-  unsigned int len;
 
-  call_itr = check_node->call_edges.find (path.front ());
-  if (call_itr == check_node->call_edges.end ())
+  if (!is_in_call_edges (check_node, path.front ()))
     return false;
 
 #ifdef DEBUG
@@ -653,24 +688,29 @@ check_call_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   path.pop_front ();
   if (path.empty ())
     return true;
-  callee_set = call_itr->second;
-  for (callee_itr = callee_set.begin (); callee_itr != callee_set.end (); callee_itr++) {
-    callee = *callee_itr;
-    if (callee->entry == path.front ()) {
-      for (len = 2; len <= 6; len++) {
-        if (callee->return_edges.find (call_addr + len) != callee->return_edges.end ()) {
-          call_stack.push (call_addr + len);
-#ifdef DEBUG
-  printf ("  push  : 0x%jx\n", call_addr + len);
-#endif
-          break;
-        }
-      }
-      return check_entry_validity (callee, path);
-    }
-  }
+  if ((callee = get_callee (check_node, call_addr, path.front ())) == NULL)
+    return false;
+  call_stack.push (get_return_addr (callee, call_addr));
+  return check_entry_validity (callee, path);
+}
 
-  return false;
+static bool
+is_in_return_edges (struct cfg_node *check_node, uint64_t return_addr)
+{
+  std::map <uint64_t, struct cfg_node *>::iterator return_itr;
+  return_itr = check_node->return_edges.find (return_addr);
+  if (return_itr != check_node->return_edges.end ())
+    return true;
+  else
+    return false;
+}
+
+static cfg_node *
+get_caller (struct cfg_node *callee, uint64_t return_addr)
+{
+  std::map <uint64_t, struct cfg_node *>::iterator return_itr;
+  return_itr = callee->return_edges.find (return_addr);
+  return return_itr->second;
 }
 
 /* check whether the next addr is return addr or not.
@@ -683,12 +723,10 @@ check_return_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
   if (path.empty ())
     return true;
 
-  std::map <uint64_t, struct cfg_node *>::iterator return_itr;
   struct cfg_node *caller;
 
-  return_itr = check_node->return_edges.find (path.front ());
-  if (return_itr == check_node->return_edges.end ())
-    return  false;
+  if (!is_in_return_edges (check_node, path.front ()))
+    return false;
 
 #ifdef DEBUG
   printf ("  return: 0x%jx\n", path.front ());
@@ -697,15 +735,17 @@ check_return_validity (struct cfg_node *check_node, std::deque <uint64_t> path)
 
   if (path.front () != call_stack.top ()) /* call/return matching */
     return false;
+  caller = get_caller (check_node, path.front ());
   path.pop_front ();
   call_stack.pop ();
   if (path.empty ())
     return true;
-  caller = return_itr->second;
-  if (!(caller->entry <= path.front () && path.front () <= caller->exit))
-    return false;
+  if (caller->exit == path.front ())
+    return check_exit_validity (caller, path);
+  if (caller->call_edges.find (path.front ()) != caller->call_edges.end ())
+    return check_call_validity (caller, path);
 
-  return check_one_addr_validity (caller, path);
+  return false;
 }
 
 /*******************************************************************

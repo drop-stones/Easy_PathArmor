@@ -109,6 +109,12 @@ D:
 	call	printf
 	nop
 	pop	rbp
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
 	.cfi_def_cfa 7, 8
 	ret
 	.cfi_endproc

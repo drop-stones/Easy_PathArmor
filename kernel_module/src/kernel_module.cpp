@@ -11,24 +11,27 @@
 #include "/home/binary/code/PathArmor/cfg_generation/src/cfg.hpp"
 
 static uint64_t start_addr, end_addr;
-static bool instrument_flag = false;
 static std::deque <uint64_t> path;
 
 static bool
-check_flag (bool old_bool, uint64_t addr)
+is_from_entry_to_exit (INS ins)
 {
+  static bool instrument_flag = false;
+  uint64_t addr = (uint64_t) INS_Address (ins);
   if (addr == start_addr) {
     path.push_back (start_addr);
+    instrument_flag = true;
     return true;
   } else if (addr == end_addr) {
     path.push_back (end_addr);
+    instrument_flag = false;
     return false;
   } else
-    return old_bool;
+    return instrument_flag;
 }
 
 static bool
-check_text_section (INS ins)
+is_in_text_section (INS ins)
 {
   RTN rtn = INS_Rtn (ins);
   SEC sec = RTN_Sec (rtn);
@@ -57,23 +60,23 @@ check_text_section (INS ins)
  *****************************************************************************/
 
 static void
-branch_record (ADDRINT exit, ADDRINT next_entry)
+branch_record (ADDRINT branch_addr, ADDRINT target_addr)
 {
-  path.push_back (exit);
-  path.push_back (next_entry);
+  path.push_back (branch_addr);
+  path.push_back (target_addr);
 }
 
 static void
-call_record (ADDRINT caller_addr, ADDRINT callee_addr)
+call_record (ADDRINT call_addr, ADDRINT target_addr)
 {
-  path.push_back (caller_addr);
-  path.push_back (callee_addr);
+  path.push_back (call_addr);
+  path.push_back (target_addr);
 }
 
 static void
-return_record (ADDRINT exit_addr, ADDRINT target_addr)
+return_record (ADDRINT return_addr, ADDRINT target_addr)
 {
-  path.push_back (exit_addr);
+  path.push_back (return_addr);
   path.push_back (target_addr);
 }
 
@@ -148,9 +151,9 @@ instrument_syscall (INS ins, void *v)
 static void
 instrument_ins (INS ins, void *v)
 {
-  if (!(instrument_flag = check_flag (instrument_flag, (uint64_t)INS_Address (ins))))
+  if (!is_from_entry_to_exit (ins))
     return;
-  if (!check_text_section (ins))
+  if (!is_in_text_section (ins))
     return;
 
   instrument_branch  (ins, NULL);
