@@ -1,5 +1,20 @@
 # cfg_generation
 
+## 説明
+1. バイナリファイル、コンフィギュレーションファイルを受け取り、指定されたentryとexitアドレスの間をエミュレーションする。
+2. エミュレーションしながらControl Flow Graphを作成し、新しいパスを通るための入力の計算を行う。
+3. 全ての入力においてエミュレーションを終了した後、作成されたCFGを指定のfileにテキスト形式で保存する。
+
+## How to Compile
+```bash
+PathArmor/cfg_generation$ make
+```
+
+## How to run
+```bash
+PathArmor/cfg_generation$ ./a.out <bin_file> <config_file> <entry_addr> <exit_addr> <save_file>
+```
+
 ## Done
 
 * 複数先へのreturnに対応
@@ -27,8 +42,7 @@
   * return: map <addr, cfg_node>に変更
 * call edge/return edgeの同じ要素追加への対処 (for, whileなど)
 * true\_edgeを set <cfg\_node> へ変更 (indirect edgeのとき、複数の飛び先が考えられるため)
-* direct edge/return/indirect jump Verification
+* direct edge/return/indirect jump, indirect call Verification
 
 ## To do
 
-* indirect call Verification
